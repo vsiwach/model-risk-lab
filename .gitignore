@@ -1,0 +1,10 @@
+__pycache__/
+*.egg-info/
+.pytest_cache/
+results/*.jsonl
+mitigate/out/
+mitigate/incident_sft.jsonl
+results/report.*
+lora/out/
+lora/sft.jsonl
+.env

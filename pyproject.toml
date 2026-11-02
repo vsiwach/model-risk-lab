@@ -1,0 +1,41 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "model-risk-lab"
+version = "0.2.0"
+description = "Assess, evaluate, mitigate and govern model risk for Nemotron open LLMs, end to end on one use case: an incident-remediation agent under prompt injection."
+readme = "README.md"
+license = { text = "Apache-2.0" }
+requires-python = ">=3.10"
+authors = [{ name = "Vikram Siwach", email = "vsiwach@gmail.com" }]
+dependencies = [
+  "openai>=1.40",
+  "datasets>=2.19",
+  "pandas>=2.0",
+  "numpy>=1.26",
+  "matplotlib>=3.8",
+  "pyyaml>=6.0",
+]
+
+[project.optional-dependencies]
+hf = ["torch>=2.2", "transformers>=4.44", "accelerate>=0.33", "peft>=0.12"]
+modal = ["modal>=1.0"]
+guardrails = ["nemoguardrails>=0.11"]
+garak = ["garak>=0.10"]
+dev = ["pytest>=8"]
+
+[project.scripts]
+nmr = "nmr.cli:main"
+incident = "incident.cli:main"
+govern = "govern.cli:main"
+
+[tool.setuptools]
+packages = ["nmr", "nmr.probes", "nmr.agentic", "incident", "govern", "mitigate"]
+package-dir = { "nmr" = "harness/nmr", "nmr.probes" = "harness/nmr/probes", "nmr.agentic" = "harness/nmr/agentic", "incident" = "target/incident", "govern" = "govern/govern", "mitigate" = "mitigate" }
+
+[tool.setuptools.package-data]
+"nmr.probes" = ["bundled/*.jsonl"]
+"govern" = ["*.yaml"]
+"mitigate" = ["*.yaml", "guardrails/*"]

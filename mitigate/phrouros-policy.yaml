@@ -1,0 +1,18 @@
+# phrouros-style deny-by-default policy for the incident agent (format: phrouros/policies/policy.yaml).
+# Anything not granted is denied; state-changing tools need a human approval token. In the lab the
+# approver is a policy-backed auto-approver that mints a token only when the invariant engine passes,
+# which is what a human on the runbook would be checking anyway.
+
+agents:
+  - id: incident-remediator
+    tools: ["probe", "wait", "quarantine", "reinstate", "resolve", "escalate"]
+  - id: incident-observer          # read-only variant for comparison runs
+    tools: ["probe", "wait"]
+
+state_changing_tools:
+  - quarantine
+  - reinstate
+  - resolve
+
+egress_allowlist:
+  - "pagerduty:*"
