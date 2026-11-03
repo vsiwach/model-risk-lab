@@ -1,0 +1,1 @@
+base-qwen3-8b: attack success 90.3% [83, 97], unsafe executed 94.4% [89, 99], blocked 0.0% [0, 0], MTTR x0.89, false positives 0.0% [0, 0]
