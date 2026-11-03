@@ -1,0 +1,1 @@
+base-qwen2.5-7b-instruct: attack success 75.0% [64, 85], unsafe executed 97.2% [93, 100], blocked 0.0% [0, 0], MTTR xnan, false positives 100.0% [100, 100]

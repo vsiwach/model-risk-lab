@@ -1,0 +1,45 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 250" width="960" height="250" font-family="DejaVu Sans, Helvetica, Arial, sans-serif">
+  <rect width="960" height="250" fill="#ffffff"/>
+  <defs><marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0 L10 5 L0 10 z" fill="#6b6b66"/></marker></defs>
+  <g>
+    <rect x="12" y="30" width="212" height="150" rx="6" fill="#2a78d6" fill-opacity="0.10" stroke="#2a78d6" stroke-width="2"/>
+    <text x="26" y="58" font-size="15" font-weight="700" fill="#2a78d6">1  ASSESS</text>
+    <text x="26" y="84" font-size="12" fill="#1f1f1d">threat model as code</text>
+    <text x="26" y="104" font-size="11.5" fill="#6b6b66">6 goals x 4 phrasings x 4 vectors</text>
+    <text x="26" y="121" font-size="11.5" fill="#6b6b66">+ clean faults for competence</text>
+    <text x="26" y="138" font-size="11.5" fill="#6b6b66">+ held-out set (unseen goals,</text>
+    <text x="26" y="155" font-size="11.5" fill="#6b6b66">   phrasings, vector)</text>
+  </g>
+  <path d="M224 105 L252 105" stroke="#6b6b66" stroke-width="2" marker-end="url(#a)"/>
+  <g>
+    <rect x="254" y="30" width="212" height="150" rx="6" fill="#eda100" fill-opacity="0.10" stroke="#eda100" stroke-width="2"/>
+    <text x="268" y="58" font-size="15" font-weight="700" fill="#b07600">2  EVALUATE</text>
+    <text x="268" y="84" font-size="12" fill="#1f1f1d">judge chosen by measurement</text>
+    <text x="268" y="104" font-size="11.5" fill="#6b6b66">bake-off vs human labels (F1)</text>
+    <text x="268" y="121" font-size="11.5" fill="#6b6b66">same 84 episodes per system</text>
+    <text x="268" y="138" font-size="11.5" fill="#6b6b66">attack success + unsafe actions</text>
+    <text x="268" y="155" font-size="11.5" fill="#6b6b66">+ resolved rate + MTTR vs rules</text>
+  </g>
+  <path d="M466 105 L494 105" stroke="#6b6b66" stroke-width="2" marker-end="url(#a)"/>
+  <g>
+    <rect x="496" y="30" width="212" height="150" rx="6" fill="#eb6834" fill-opacity="0.10" stroke="#eb6834" stroke-width="2"/>
+    <text x="510" y="58" font-size="15" font-weight="700" fill="#eb6834">3  MITIGATE</text>
+    <text x="510" y="84" font-size="12" fill="#1f1f1d">three fixes, same episodes</text>
+    <text x="510" y="104" font-size="11.5" fill="#6b6b66">prompt hardening (data vs instruction)</text>
+    <text x="510" y="121" font-size="11.5" fill="#6b6b66">runtime policy guard (deny by default)</text>
+    <text x="510" y="138" font-size="11.5" fill="#6b6b66">QLoRA on 1,498 oracle-labelled packets</text>
+    <text x="510" y="155" font-size="11.5" fill="#6b6b66">25 min on one A100</text>
+  </g>
+  <path d="M708 105 L736 105" stroke="#6b6b66" stroke-width="2" marker-end="url(#a)"/>
+  <g>
+    <rect x="738" y="30" width="210" height="150" rx="6" fill="#1baf7a" fill-opacity="0.10" stroke="#1baf7a" stroke-width="2"/>
+    <text x="752" y="58" font-size="15" font-weight="700" fill="#148a60">4  GOVERN</text>
+    <text x="752" y="84" font-size="12" fill="#1f1f1d">gate, then certificate</text>
+    <text x="752" y="104" font-size="11.5" fill="#6b6b66">thresholds in YAML, one verdict</text>
+    <text x="752" y="121" font-size="11.5" fill="#6b6b66">per number (attack, exfil, outage,</text>
+    <text x="752" y="138" font-size="11.5" fill="#6b6b66">MTTR, false positives, judge F1)</text>
+    <text x="752" y="155" font-size="11.5" fill="#6b6b66">HMAC-signed, 90-day expiry</text>
+  </g>
+  <text x="12" y="218" font-size="12" fill="#1f1f1d">Use case: an incident-remediation agent for an inference control plane. Closed allowlist: quarantine, probe, reinstate, resolve, escalate, wait.</text>
+  <text x="12" y="238" font-size="12" fill="#6b6b66">Attacks arrive as data: a log line, an alert annotation, a runbook page, a probe result, a ticket comment.</text>
+</svg>
