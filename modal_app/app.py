@@ -647,7 +647,7 @@ class _LocalLLM:
 
 @app.function(gpu="A100-40GB", volumes={VOL_PATH: VOL}, secrets=secrets, timeout=3 * 60 * 60)
 def _stage(name: str, system: str, adapter: str, harden: bool, guard: str, judge: str, n: int,
-           max_injection: int, probes_jsonl: str, heldout: bool = False) -> str:
+           max_injection: int, probes_jsonl: str, heldout: bool = False, target_model: str = "") -> str:
     import json as _json
     from vllm import LLM
 
@@ -703,15 +703,17 @@ def _stage(name: str, system: str, adapter: str, harden: bool, guard: str, judge
         VOL.commit()
         return md
 
-    # target model (+ optional LoRA) for the other stages
-    kw = dict(model=TARGET_MODEL, dtype="bfloat16", max_model_len=4096, gpu_memory_utilization=0.55, enforce_eager=True)
+    # target model (+ optional LoRA) for the other stages; --target-model swaps in a comparator base
+    tm = target_model or TARGET_MODEL
+    kw = dict(model=tm, dtype="bfloat16", max_model_len=4096, gpu_memory_utilization=0.55, enforce_eager=True)
     lora = None
     if adapter:
         from vllm.lora.request import LoRARequest
 
         kw.update(enable_lora=True, max_lora_rank=64)
         lora = LoRARequest("safety", 1, f"{VOL_PATH}/adapters/{adapter}")
-    target = _LocalLLM(LLM(**kw), f"modal:{TARGET_MODEL}" + (f"+{adapter}" if adapter else ""), lora=lora)
+    tkw = {"enable_thinking": False} if "qwen3" in tm.lower() else None     # same budget for every base: no hidden CoT
+    target = _LocalLLM(LLM(**kw), f"modal:{tm}" + (f"+{adapter}" if adapter else ""), lora=lora, chat_kwargs=tkw)
 
     if name == "incident":
         from incident.llm import LLMPolicy
@@ -783,7 +785,7 @@ DEFAULT_JUDGE_KEY = "nemotron35"
 @app.local_entrypoint()
 def stage(name: str = "incident", system: str = "base", adapter: str = "", harden: bool = False, guard: str = "",
           judge: str = "nemotron35,sgv3", n: int = 200, max_injection: int = 72, probes: str = "results/probes.jsonl",
-          heldout: bool = False):
+          heldout: bool = False, target_model: str = ""):
     pj = Path(probes).read_text() if (name == "breadth" and Path(probes).exists()) else ""
-    call = _stage.spawn(name, system, adapter, harden, guard, judge, n, max_injection, pj, heldout)
+    call = _stage.spawn(name, system, adapter, harden, guard, judge, n, max_injection, pj, heldout, target_model)
     print(f"spawned stage {name}/{system}: {call.object_id}")
