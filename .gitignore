@@ -9,3 +9,4 @@ results/report.*
 lora/out/
 lora/sft.jsonl
 .env
+results/logs/
