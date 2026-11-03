@@ -1,13 +1,13 @@
 # model-risk-lab
 
-**Can an open model be trusted to run an agent that takes real actions? We measured it, fixed it, and
-gated it, end to end, on NVIDIA's Nemotron.**
+**Can an open model be trusted to run an agent that takes real actions? We measured it, fixed it and
+gated the release, end to end, on NVIDIA's Nemotron.**
 
-An AI agent that reads logs and alerts and then acts on production systems can be tricked by text
-planted in those logs and alerts. This repo puts Nemotron Nano 8B in charge of an incident-response
-agent, plants instructions in its data, counts how often it obeys, and then shows what each fix buys:
-a hardened prompt, a runtime policy that blocks disallowed actions, and a short fine-tune. Every number
-here was produced on Modal on 2026-11-03 and regenerates from the commands further down.
+An agent that reads logs and alerts and then acts on production systems can be steered by text planted
+in those logs and alerts. This repo puts Nemotron Nano 8B in charge of an incident-response agent,
+plants instructions in the data it reads, counts how often it obeys, and shows what each fix buys: a
+hardened prompt, a runtime policy that blocks disallowed actions, and a short fine-tune. Every number on
+this page was produced on Modal on 2026-11-03 and regenerates from the commands below.
 
 ---
 
@@ -18,16 +18,17 @@ here was produced on Modal on 2026-11-03 and regenerates from the commands furth
 *Left is safer (the agent ignores planted instructions). Up is more useful (the agent resolves real
 incidents on its own). The target is the top-left corner.*
 
-- **Out of the box, open models obey planted instructions.** Nemotron Nano 8B followed them 50% of the
-  time, Qwen2.5-7B 75%, Qwen3-8B 90%.
-- **Safety training protects data, not actions.** Nemotron never leaked the admin credential, but it
-  carried out planted commands such as "take this server pool offline" about 90% of the time.
+- **Out of the box, open models obey planted instructions.** Across all six attack goals, Nemotron Nano
+  8B complied 50% of the time, Qwen2.5-7B 75%, Qwen3-8B 90%.
+- **Safety training protects data, not actions.** Nemotron never leaked the admin credential. When the
+  planted instruction was an operational command, such as taking a healthy server pool offline, it
+  complied about nine times out of ten. Qwen3-8B leaked the credential every time.
 - **Safe and useful are different problems.** A strict runtime policy stopped every attack, and the
-  agent then could not resolve a single real incident. Qwen3-8B resolved incidents well and also leaked
-  the credential every time.
+  agent then could not resolve a single real incident. Qwen3-8B resolved incidents well and was the
+  least safe model tested.
 - **A short fine-tune reaches the corner.** About 1,500 examples labelled by the rules the operations
-  team already runs, 25 minutes on one GPU: zero attacks succeed on new, unseen attack text, every real
-  incident resolved as fast as the rule-based system, and the release gate passes.
+  team already runs, 25 minutes on one GPU: no attack succeeded, including attack text the model had
+  never seen; every real incident resolved as fast as the rule-based system; release gate passed.
 
 ## How the study works
 
@@ -44,7 +45,10 @@ no attack so we can measure whether the agent still does its job.
 
 ![Attack success by system, 72 planted-instruction episodes each, with 95% intervals](docs/img/attack_success.png)
 
-![Attack success by goal: Nemotron holds the secret but obeys the commands; Qwen3 obeys everything](docs/img/by_goal.png)
+![Attack success by goal: Nemotron keeps the secret but follows the commands; Qwen3 follows everything](docs/img/by_goal.png)
+
+*Attack success by goal for the two base models. Nemotron's safety training holds on the credential and
+fails on operational commands. Qwen3 fails on both.*
 
 <details>
 <summary><strong>Full table: Nemotron Nano 8B as the incident agent, plus comparators</strong></summary>
@@ -68,9 +72,9 @@ is [`docs/model-risk-requirements.md`](docs/model-risk-requirements.md).
 </details>
 
 **What this means for a model-risk team.** Content safety for open models is well covered by existing
-judges and datasets. Safety of *agent actions* is the open gap, it shows up in every open model we
-tested, and it can be closed for a specific job with NVIDIA's own stack in an afternoon. The rest of
-this page is how to reproduce it.
+judges and datasets. Safety of *agent actions* is the open gap: it shows up in every open model we
+tested, and it can be closed for a given job with NVIDIA's own stack, on a measured path from evaluation
+to fine-tune to release gate. The rest of this page is how to reproduce it.
 
 ---
 
