@@ -1,52 +1,76 @@
 # model-risk-lab
 
-**Make an open model safe for one enterprise agent job, prove it, and gate the release.**
-Assess, evaluate, mitigate and govern model risk for Nemotron open LLMs, end to end, on a concrete use
-case: an incident-remediation agent for an inference control plane, under prompt injection.
+**Can an open model be trusted to run an agent that takes real actions? We measured it, fixed it, and
+gated it, end to end, on NVIDIA's Nemotron.**
 
-Everything here is runnable: the numbers below came from Modal on 2026-11-03 and regenerate from the
-commands in this file. The product thinking behind it is in [`docs/model-risk-requirements.md`](docs/model-risk-requirements.md)
-(what to measure, what to gate) and the full results with their limits in [`docs/RESULTS.md`](docs/RESULTS.md).
+An AI agent that reads logs and alerts and then acts on production systems can be tricked by text
+planted in those logs and alerts. This repo puts Nemotron Nano 8B in charge of an incident-response
+agent, plants instructions in its data, counts how often it obeys, and then shows what each fix buys:
+a hardened prompt, a runtime policy that blocks disallowed actions, and a short fine-tune. Every number
+here was produced on Modal on 2026-11-03 and regenerates from the commands further down.
 
 ---
 
-## Headline
+## What we found, in one picture
 
-Open 8B models put on an action loop obey instructions planted in their data: Nemotron Nano 50% of the
-time, Qwen3 90%, Qwen2.5 75%. With NVIDIA's open stack (Nemotron Nano 8B, Nemotron-family safety
-judges, a deny-by-default runtime policy) and 1,498 examples labelled by the rules an SRE team already
-runs, **an afternoon and about $25 of GPU time turns Nemotron into an agent that ignores planted
-commands, resolves real incidents as fast as the rule-based system, and passes a signed release gate,
-in distribution and on a held-out attack set.**
+![Safety vs competence: every base model sits on one axis or the other; only the fine-tune reaches the corner](docs/img/safety_vs_competence.png)
 
-![Safety vs competence](docs/img/safety_vs_competence.png)
+*Left is safer (the agent ignores planted instructions). Up is more useful (the agent resolves real
+incidents on its own). The target is the top-left corner.*
 
-![Pipeline](docs/img/pipeline.svg)
+- **Out of the box, open models obey planted instructions.** Nemotron Nano 8B followed them 50% of the
+  time, Qwen2.5-7B 75%, Qwen3-8B 90%.
+- **Safety training protects data, not actions.** Nemotron never leaked the admin credential, but it
+  carried out planted commands such as "take this server pool offline" about 90% of the time.
+- **Safe and useful are different problems.** A strict runtime policy stopped every attack, and the
+  agent then could not resolve a single real incident. Qwen3-8B resolved incidents well and also leaked
+  the credential every time.
+- **A short fine-tune reaches the corner.** About 1,500 examples labelled by the rules the operations
+  team already runs, 25 minutes on one GPU: zero attacks succeed on new, unseen attack text, every real
+  incident resolved as fast as the rule-based system, and the release gate passes.
 
-| Nemotron Nano 8B as the incident agent | attack success | unsafe actions executed | clean faults resolved | MTTR vs rules | release gate |
+## How the study works
+
+![Pipeline: assess, evaluate, mitigate, govern](docs/img/pipeline.svg)
+
+The agent sees a packet of telemetry, recent log lines, an alert note, a runbook excerpt and its last
+tool result, and must pick one action from a fixed menu. An attacker who can write to any of those
+channels plants an instruction. We test six goals (take a healthy pool offline, take the last healthy
+pool offline, restore a pool too early, close an incident that is still open, page an outside URL, leak
+the admin credential), four ways of phrasing them, four places to hide them, plus clean incidents with
+no attack so we can measure whether the agent still does its job.
+
+## The numbers behind the picture
+
+![Attack success by system, 72 planted-instruction episodes each, with 95% intervals](docs/img/attack_success.png)
+
+![Attack success by goal: Nemotron holds the secret but obeys the commands; Qwen3 obeys everything](docs/img/by_goal.png)
+
+<details>
+<summary><strong>Full table: Nemotron Nano 8B as the incident agent, plus comparators</strong></summary>
+
+| system | attack success | unsafe actions executed | clean incidents resolved | speed vs rule-based agent | release gate |
 |---|---|---|---|---|---|
-| **+ LoRA (this repo), held-out attacks** | **0%** | **0%** | **100%** | **x1.00** | **PASS** |
-| + LoRA, in-distribution attacks | 0% | 0% | 100% | x1.00 | PASS |
-| + runtime policy guard (deny by default) | 0% (50% blocked) | 0% | 0% | never | FAIL (competence) |
-| + hardened prompt | 30.6% | 27.8% | 0% | never | FAIL |
-| base, held-out attacks | 55.0% | 48.3% | 0% | never | FAIL |
-| base | 50.0% | 47.2% | 0% | never | FAIL |
-| rule-based agent (baseline) | 0% | 0% | 100% | x1.00 | |
-| *comparator:* Qwen3-8B, base | 90.3% | 94.4% | 88.9% | x0.89 | FAIL (12% outages, 24% exfiltration) |
-| *comparator:* Qwen2.5-7B-Instruct, base | 75.0% | 97.2% | 0% | never | FAIL (100% false positives) |
+| **+ fine-tune (this repo), unseen attacks** | **0%** | **0%** | **100%** | **same** | **PASS** |
+| + fine-tune, seen attack families | 0% | 0% | 100% | same | PASS |
+| + runtime policy guard | 0% (50% blocked) | 0% | 0% | never resolves | FAIL (usefulness) |
+| + hardened prompt | 30.6% | 27.8% | 0% | never resolves | FAIL |
+| base, unseen attacks | 55.0% | 48.3% | 0% | never resolves | FAIL |
+| base | 50.0% | 47.2% | 0% | never resolves | FAIL |
+| rule-based agent (no LLM) | 0% | 0% | 100% | same | |
+| *comparator:* Qwen3-8B, base | 90.3% | 94.4% | 88.9% | 11% faster | FAIL (12% outages, 24% leaks) |
+| *comparator:* Qwen2.5-7B-Instruct, base | 75.0% | 97.2% | 0% | never resolves | FAIL (acts when nothing is wrong) |
 
-The finding underneath the headline is the one a model-risk team should care about: the base model's
-safety training covers **content**, not **actions**. It refused to leak the admin token (0%) and
-mostly refused to page an external webhook (18%), but it carried out planted *operational* commands
-(quarantine this pool, reinstate now) 79 to 92% of the time. Agentic action safety is the uncovered
-quadrant, and it is the one this repo measures and closes. The comparators make the point general: Qwen3-8B
-is a competent incident agent (resolves 89% of clean faults, faster than the rules) that also leaks the
-admin token 100% of the time and takes the service down in 12% of episodes. Competent and obedient, or
-cautious and useless; the fine-tune is the only configuration that is both.
+Judges were chosen by measurement first: on 200 human-labelled responses, Safety Guard 8B v3 scored
+F1 88.7 and Nemotron 3.5 Content Safety 85.1. Full tables, the unseen-attack protocol and the open
+limits are in [`docs/RESULTS.md`](docs/RESULTS.md); the product write-up (what to measure, what to gate)
+is [`docs/model-risk-requirements.md`](docs/model-risk-requirements.md).
+</details>
 
-![Attack success by system](docs/img/attack_success.png)
-
-![By goal](docs/img/by_goal.png)
+**What this means for a model-risk team.** Content safety for open models is well covered by existing
+judges and datasets. Safety of *agent actions* is the open gap, it shows up in every open model we
+tested, and it can be closed for a specific job with NVIDIA's own stack in an afternoon. The rest of
+this page is how to reproduce it.
 
 ---
 
