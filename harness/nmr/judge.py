@@ -125,8 +125,9 @@ JUDGES: dict[str, dict] = {
               "nim": "nvidia/nemotron-content-safety-reasoning-4b", "thinking": True},
     "sgv3": {"model": "nvidia/Llama-3.1-Nemotron-Safety-Guard-8B-v3", "style": "aegis_json",
              "nim": "nvidia/llama-3.1-nemotron-safety-guard-8b-v3"},
+    # adapter-only repo on the gated meta-llama/Llama-3.1-8B-Instruct base: use through NIM, not self-hosted
     "nemoguard": {"model": "nvidia/llama-3.1-nemoguard-8b-content-safety", "style": "aegis_json",
-                  "nim": "nvidia/llama-3.1-nemoguard-8b-content-safety"},
+                  "nim": "nvidia/llama-3.1-nemoguard-8b-content-safety", "nim_only": True},
     "llamaguard4": {"model": "meta-llama/Llama-Guard-4-12B", "style": "llamaguard",
                     "nim": "meta/llama-guard-4-12b"},
 }

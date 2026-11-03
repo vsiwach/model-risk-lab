@@ -130,6 +130,8 @@ class Guard:
         from nmr.judge import JUDGES
 
         self.spec = JUDGES[self.judge]
+        if self.spec.get("nim_only"):
+            raise RuntimeError(f"judge {self.judge} is adapter-only on a gated base; use it through NIM, not Modal")
         self.llm = LLM(model=self.spec["model"], dtype="bfloat16", max_model_len=8192,
                        gpu_memory_utilization=0.90, enforce_eager=True)
 
@@ -475,3 +477,299 @@ def incident_train(sft: str = "mitigate/incident_sft.jsonl", name: str = "nemotr
                    download: str = "mitigate/out"):
     """QLoRA on the oracle-labelled incident packets (build them first: `incident sft`)."""
     train(sft=sft, name=name, epochs=epochs, lr=lr, rank=rank, max_len=max_len, download=download)
+
+
+# --------------------------------------------------------------------------------------- detached orchestration
+#
+# The local entrypoints above drive the loop from the laptop. These run the same loops *inside* Modal
+# and write to the volume, so `modal run --detach modal_app/app.py::job --stage incident --system base`
+# survives the client going away. Fetch results with `modal volume get model-risk-lab-vol results/<file> results/`.
+
+
+@app.function(timeout=4 * 60 * 60, volumes={VOL_PATH: VOL})
+def _job(stage: str, system: str, adapter: str, harden: bool, guard: str, judges: str, n: int,
+         max_injection: int, probes_jsonl: str) -> str:
+    sys.path.insert(0, "/root")
+    out_dir = Path(f"{VOL_PATH}/results")
+    out_dir.mkdir(parents=True, exist_ok=True)
+    if stage == "bakeoff":
+        from nmr.calibrate import Calibration, load_labelled
+        from nmr.judge import verdict_from_guard
+
+        triples = load_labelled(n=n)
+        rows = []
+        for key in [k.strip() for k in judges.split(",") if k.strip()]:
+            g = Guard(judge=key)
+            raws = []
+            for i in range(0, len(triples), 32):
+                chunk = triples[i:i + 32]
+                raws += g.check.remote([(p.prompt, gen.response) for p, gen, _ in chunk])
+            tp = fp = tn = fn = 0
+            for (p, gen, truth), raw in zip(triples, raws):
+                pred = verdict_from_guard(p, gen, raw, judge_name=key).response_unsafe
+                tp += pred and truth; fp += pred and not truth; tn += (not pred) and (not truth); fn += (not pred) and truth
+            rows.append(Calibration(judge=key, n=len(triples), tp=tp, fp=fp, tn=tn, fn=fn))
+        md = "## Judge bake-off (Aegis 2.0 test, human response labels)\n\n" + rows[0].markdown()
+        for r in rows[1:]:
+            md += r.markdown().splitlines()[-1] + "\n"
+        (out_dir / "calibration.md").write_text(md)
+        VOL.commit()
+        return md
+    if stage == "incident":
+        from incident.llm import LLMPolicy
+        from incident.metrics import summarize_incident
+        from incident.runner import run_scenarios
+        from incident.scenarios import build_scenarios
+
+        target = Target(adapter=adapter)
+
+        class Remote:
+            name = f"modal:{TARGET_MODEL}" + (f"+{adapter}" if adapter else "")
+
+            def chat_messages(self, messages):
+                r = target.chat_multi.remote([messages], 200)[0]
+                return r["text"], r["prompt_tokens"], r["completion_tokens"]
+
+        be = Remote()
+        eps = run_scenarios(lambda: LLMPolicy(be, hardened=harden), build_scenarios(max_injection=max_injection),
+                            system_name=system, guard=(guard or False), out_path=out_dir / f"inc_{system}.jsonl", workers=8)
+        VOL.commit()
+        s = summarize_incident(eps)
+        return (f"{system}: attack success {s.attack_success.as_pct()}, unsafe executed {s.unsafe_executed.as_pct()}, "
+                f"blocked {s.blocked.as_pct()}, MTTR x{s.mttr_ratio:.2f}, false positives {s.false_positive.as_pct()}")
+    if stage == "breadth":
+        from nmr.backends import DEFAULT_SYSTEM
+        from nmr.judge import parse_guard, verdict_from_guard
+        from nmr.metrics import summarize
+        from nmr.rails import HARDENING, SAFE_REFUSAL
+        from nmr.types import Generation, Probe, Record, write_records
+        import json as _json
+
+        plist = [Probe(**_json.loads(l)) for l in probes_jsonl.splitlines() if l.strip()]
+        rails = system.startswith("rails")
+        target, guard_ = Target(adapter=adapter), Guard()
+        systems = [(p.meta.get("system") or DEFAULT_SYSTEM) + (HARDENING if rails else "") for p in plist]
+        users = [p.prompt for p in plist]
+        responses = [None] * len(plist)
+        rails_info = [{} for _ in plist]
+        todo = list(range(len(plist)))
+        if rails:
+            verdicts = []
+            for i in range(0, len(plist), 32):
+                verdicts += guard_.check.remote([(u, "") for u in users[i:i + 32]])
+            todo = []
+            for i, raw in enumerate(verdicts):
+                parsed = parse_guard(raw)
+                if parsed and parsed[0]:
+                    responses[i] = {"text": SAFE_REFUSAL, "prompt_tokens": 0, "completion_tokens": 0, "latency_s": 0.0}
+                    rails_info[i] = {"input_blocked": True, "categories": parsed[2]}
+                else:
+                    todo.append(i)
+        for s0 in range(0, len(todo), 32):
+            idx = todo[s0:s0 + 32]
+            for i, r in zip(idx, target.chat.remote([(systems[i], users[i]) for i in idx], max_tokens=512)):
+                responses[i] = r
+        if rails and todo:
+            raws = []
+            for s0 in range(0, len(todo), 32):
+                idx = todo[s0:s0 + 32]
+                raws += guard_.check.remote([(users[i], responses[i]["text"]) for i in idx])
+            for i, raw in zip(todo, raws):
+                parsed = parse_guard(raw)
+                if parsed and parsed[1]:
+                    responses[i]["text"] = SAFE_REFUSAL
+                    rails_info[i] = {"output_blocked": True, "categories": parsed[2]}
+        raws = []
+        for i in range(0, len(plist), 32):
+            raws += guard_.check.remote([(users[j], responses[j]["text"]) for j in range(i, min(i + 32, len(plist)))])
+        records = []
+        for p, r, raw, ri in zip(plist, responses, raws, rails_info):
+            g = Generation(probe_id=p.id, system=system, response=r["text"], latency_s=r["latency_s"],
+                           prompt_tokens=r["prompt_tokens"], completion_tokens=r["completion_tokens"], rails=ri)
+            records.append(Record(p, g, verdict_from_guard(p, g, raw)))
+        write_records(out_dir / f"{system}.jsonl", records)
+        VOL.commit()
+        sm = summarize(records)
+        return f"{system}: ASR overall {sm.asr_overall.as_pct()}, over-refusal {sm.over_refusal.as_pct()}, canary leak {sm.canary_leak.as_pct()}"
+    raise ValueError(stage)
+
+
+@app.local_entrypoint()
+def job(stage: str = "incident", system: str = "base", adapter: str = "", harden: bool = False, guard: str = "",
+        judges: str = "nemotron35,sgv3", n: int = 200, max_injection: int = 72, probes: str = "results/probes.jsonl"):
+    """Detached job runner. Example: modal run --detach modal_app/app.py::job --stage incident --system base"""
+    pj = Path(probes).read_text() if (stage == "breadth" and Path(probes).exists()) else ""
+    call = _job.spawn(stage, system, adapter, harden, guard, judges, n, max_injection, pj)
+    print(f"spawned {stage}/{system}: call id {call.object_id}; results land in volume {APP}-vol under results/")
+
+
+# --------------------------------------------------------------------------------------- single-container stages
+#
+# One GPU container loads the target and the judge in-process and runs a whole stage, writing to the volume.
+# No cross-function calls, nothing depends on the client staying alive:
+#   modal run --detach modal_app/app.py::stage --name incident --system base
+#   modal run --detach modal_app/app.py::stage --name bakeoff
+#   modal run --detach modal_app/app.py::stage --name breadth --system base --probes results/probes.jsonl
+
+
+class _LocalLLM:
+    """Thread-safe wrapper over an in-process vLLM engine with the harness backend interface."""
+
+    def __init__(self, llm, name: str, lora=None, max_tokens: int = 400, chat_kwargs: dict | None = None):
+        import threading
+
+        self.llm, self.name, self.lora, self.max_tokens, self.chat_kwargs = llm, name, lora, max_tokens, chat_kwargs
+        self._lock = threading.Lock()
+
+    def chat_many(self, msgs: list[list[dict]], max_tokens: int | None = None) -> list[str]:
+        from vllm import SamplingParams
+
+        sp = SamplingParams(temperature=0.0, max_tokens=max_tokens or self.max_tokens)
+        kw = {"chat_template_kwargs": self.chat_kwargs} if self.chat_kwargs else {}
+        with self._lock:
+            outs = self.llm.chat(msgs, sp, lora_request=self.lora, use_tqdm=False, **kw)
+        return [o.outputs[0].text for o in outs]
+
+    def chat_messages(self, messages: list[dict]):
+        return self.chat_many([messages])[0], 0, 0
+
+    def chat(self, system: str, user: str):
+        return self.chat_messages([{"role": "system", "content": system}, {"role": "user", "content": user}])
+
+
+@app.function(gpu="A100-40GB", volumes={VOL_PATH: VOL}, secrets=secrets, timeout=3 * 60 * 60)
+def _stage(name: str, system: str, adapter: str, harden: bool, guard: str, judge: str, n: int,
+           max_injection: int, probes_jsonl: str) -> str:
+    import json as _json
+    from vllm import LLM
+
+    sys.path.insert(0, "/root")
+    from nmr.judge import JUDGES, guard_prompt, parse_guard, verdict_from_guard
+
+    out_dir = Path(f"{VOL_PATH}/results")
+    out_dir.mkdir(parents=True, exist_ok=True)
+
+    def load_judge(key: str):
+        spec = JUDGES[key]
+        llm = LLM(model=spec["model"], dtype="bfloat16", max_model_len=8192, gpu_memory_utilization=0.30,
+                  enforce_eager=True)
+        style = spec["style"]
+        kw = None if style == "aegis_json" else {"request_categories": "/categories",
+                                                  "enable_thinking": bool(spec.get("thinking"))}
+        return _LocalLLM(llm, key, max_tokens=120, chat_kwargs=kw), style
+
+    def judge_raw(j, style, pairs):
+        if style == "aegis_json":
+            msgs = [[{"role": "user", "content": guard_prompt(u, r)}] for u, r in pairs]
+        else:
+            msgs = [[{"role": "user", "content": u}] + ([{"role": "assistant", "content": r}] if r else []) for u, r in pairs]
+        return [t.split("</think>")[-1] for t in j.chat_many(msgs, max_tokens=120)]
+
+    if name == "bakeoff":
+        from nmr.calibrate import Calibration, load_labelled
+
+        triples = load_labelled(n=n)
+        rows = []
+        for key in [k.strip() for k in judge.split(",") if k.strip()]:
+            j, style = load_judge(key)
+            raws = []
+            for i in range(0, len(triples), 64):
+                raws += judge_raw(j, style, [(p.prompt, g.response) for p, g, _ in triples[i:i + 64]])
+            tp = fp = tn = fn = 0
+            for (p, g, truth), raw in zip(triples, raws):
+                pred = verdict_from_guard(p, g, raw, judge_name=key).response_unsafe
+                tp += pred and truth; fp += pred and not truth; tn += (not pred) and (not truth); fn += (not pred) and truth
+            rows.append(Calibration(judge=key, n=len(triples), tp=tp, fp=fp, tn=tn, fn=fn))
+            print(rows[-1].markdown())
+            del j.llm, j
+            import gc, torch
+            gc.collect(); torch.cuda.empty_cache()
+        md = "## Judge bake-off (Aegis 2.0 test, human response labels)\n\n" + rows[0].markdown()
+        for r in rows[1:]:
+            md += r.markdown().splitlines()[-1] + "\n"
+        (out_dir / "calibration.md").write_text(md)
+        VOL.commit()
+        return md
+
+    # target model (+ optional LoRA) for the other stages
+    kw = dict(model=TARGET_MODEL, dtype="bfloat16", max_model_len=4096, gpu_memory_utilization=0.55, enforce_eager=True)
+    lora = None
+    if adapter:
+        from vllm.lora.request import LoRARequest
+
+        kw.update(enable_lora=True, max_lora_rank=64)
+        lora = LoRARequest("safety", 1, f"{VOL_PATH}/adapters/{adapter}")
+    target = _LocalLLM(LLM(**kw), f"modal:{TARGET_MODEL}" + (f"+{adapter}" if adapter else ""), lora=lora)
+
+    if name == "incident":
+        from incident.llm import LLMPolicy
+        from incident.metrics import summarize_incident
+        from incident.runner import run_scenarios
+        from incident.scenarios import build_scenarios
+
+        target.max_tokens = 200
+        eps = run_scenarios(lambda: LLMPolicy(target, hardened=harden), build_scenarios(max_injection=max_injection),
+                            system_name=system, guard=(guard or False), out_path=out_dir / f"inc_{system}.jsonl", workers=1)
+        VOL.commit()
+        s = summarize_incident(eps)
+        msg = (f"{system}: attack success {s.attack_success.as_pct()}, unsafe executed {s.unsafe_executed.as_pct()}, "
+               f"blocked {s.blocked.as_pct()}, MTTR x{s.mttr_ratio:.2f}, false positives {s.false_positive.as_pct()}")
+        (out_dir / f"inc_{system}.txt").write_text(msg)
+        VOL.commit()
+        return msg
+
+    if name == "breadth":
+        from nmr.backends import DEFAULT_SYSTEM
+        from nmr.metrics import summarize
+        from nmr.rails import HARDENING, SAFE_REFUSAL
+        from nmr.types import Generation, Probe, Record, write_records
+
+        j, style = load_judge(judge or DEFAULT_JUDGE_KEY)
+        plist = [Probe(**_json.loads(l)) for l in probes_jsonl.splitlines() if l.strip()]
+        rails = system.startswith("rails")
+        systems = [(p.meta.get("system") or DEFAULT_SYSTEM) + (HARDENING if rails else "") for p in plist]
+        users = [p.prompt for p in plist]
+        texts = [None] * len(plist)
+        info = [{} for _ in plist]
+        todo = list(range(len(plist)))
+        if rails:
+            raws = judge_raw(j, style, [(u, "") for u in users])
+            todo = []
+            for i, raw in enumerate(raws):
+                parsed = parse_guard(raw)
+                if parsed and parsed[0]:
+                    texts[i], info[i] = SAFE_REFUSAL, {"input_blocked": True, "categories": parsed[2]}
+                else:
+                    todo.append(i)
+        for s0 in range(0, len(todo), 64):
+            idx = todo[s0:s0 + 64]
+            outs = target.chat_many([[{"role": "system", "content": systems[i]}, {"role": "user", "content": users[i]}] for i in idx], 512)
+            for i, t in zip(idx, outs):
+                texts[i] = t
+        if rails and todo:
+            raws = judge_raw(j, style, [(users[i], texts[i]) for i in todo])
+            for i, raw in zip(todo, raws):
+                parsed = parse_guard(raw)
+                if parsed and parsed[1]:
+                    texts[i], info[i] = SAFE_REFUSAL, {"output_blocked": True, "categories": parsed[2]}
+        raws = judge_raw(j, style, [(users[i], texts[i]) for i in range(len(plist))])
+        records = []
+        for p, t, raw, ri in zip(plist, texts, raws, info):
+            g = Generation(probe_id=p.id, system=system, response=t, latency_s=0.0, rails=ri)
+            records.append(Record(p, g, verdict_from_guard(p, g, raw, judge_name=j.name)))
+        write_records(out_dir / f"{system}.jsonl", records)
+        VOL.commit()
+        sm = summarize(records)
+        return f"{system}: ASR overall {sm.asr_overall.as_pct()}, over-refusal {sm.over_refusal.as_pct()}, canary leak {sm.canary_leak.as_pct()}"
+    raise ValueError(name)
+
+
+DEFAULT_JUDGE_KEY = "nemotron35"
+
+
+@app.local_entrypoint()
+def stage(name: str = "incident", system: str = "base", adapter: str = "", harden: bool = False, guard: str = "",
+          judge: str = "nemotron35,sgv3", n: int = 200, max_injection: int = 72, probes: str = "results/probes.jsonl"):
+    pj = Path(probes).read_text() if (name == "breadth" and Path(probes).exists()) else ""
+    call = _stage.spawn(name, system, adapter, harden, guard, judge, n, max_injection, pj)
+    print(f"spawned stage {name}/{system}: {call.object_id}")

@@ -113,8 +113,16 @@ def run_scenarios(policy_factory, scenarios: list[Scenario], system_name: str, g
     def one(sc: Scenario) -> Episode:
         return run_episode(policy_factory(), sc, system_name, guard=guard)
 
-    with ThreadPoolExecutor(max_workers=max(1, workers)) as ex:
-        eps = list(ex.map(one, scenarios))
+    if workers <= 1:  # inline: some engines (vLLM in-process) must be driven from the creating thread
+        eps = []
+        for i, sc in enumerate(scenarios, 1):
+            eps.append(one(sc))
+            if i % 10 == 0 or i == len(scenarios):
+                log.info("episode %d/%d (%s)", i, len(scenarios), system_name)
+                print(f"episode {i}/{len(scenarios)} ({system_name})", flush=True)
+    else:
+        with ThreadPoolExecutor(max_workers=workers) as ex:
+            eps = list(ex.map(one, scenarios))
     if out_path:
         out_path.parent.mkdir(parents=True, exist_ok=True)
         with out_path.open("w", encoding="utf-8") as f:

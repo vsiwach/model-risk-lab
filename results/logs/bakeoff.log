@@ -1,0 +1,83 @@
+✓ Initialized. View run at 
+https://modal.com/apps/vsiwach/main/ap-z0gpevCjgjJMti7rtWIuhE
+✓ Created objects.
+├── ✓ Uploaded /home/claude/model-risk-lab/modal_app/app.py
+├── ✓ Uploaded /home/claude/model-risk-lab/mitigate
+├── ✓ Uploaded /home/claude/model-risk-lab/target/incident
+├── ✓ Uploaded /home/claude/model-risk-lab/harness/nmr
+├── ✓ Created Function Target.*.
+├── ✓ Created Function Guard.*.
+└── ✓ Created Function _train.
+Warning: You are sending unauthenticated requests to the HF Hub. Please set a HF_TOKEN to enable higher rate limits and faster downloads.
+╭─ Error ──────────────────────────────────────────────────────────────────────╮
+│ [Errno 111] Could not connect to proxy 127.0.0.1:33713 [Connect call failed  │
+│ ('127.0.0.1', 33713)]                                                        │
+╰──────────────────────────────────────────────────────────────────────────────╯
+Task exception was never retrieved
+future: <Task finished name='Task-16' coro=<get_app_logs_loop() done, defined at /usr/local/lib/python3.13/site-packages/modal/_output/pty.py:91> exception=ProxyConnectionError(111, "Could not connect to proxy 127.0.0.1:33713 [Connect call failed ('127.0.0.1', 33713)]")>
+Traceback (most recent call last):
+  File "/usr/local/lib/python3.13/site-packages/python_socks/async_/asyncio/_proxy.py", line 93, in _connect
+    sock = await connect_tcp(
+           ^^^^^^^^^^^^^^^^^^
+    ...<4 lines>...
+    )
+    ^
+  File "/usr/local/lib/python3.13/site-packages/python_socks/async_/asyncio/_connect.py", line 31, in connect_tcp
+    await loop.sock_connect(sock=sock, address=address)
+  File "/usr/local/lib/python3.13/asyncio/selector_events.py", line 643, in sock_connect
+    return await fut
+           ^^^^^^^^^
+  File "/usr/local/lib/python3.13/asyncio/selector_events.py", line 683, in _sock_connect_cb
+    raise OSError(err, f'Connect call failed {address}')
+ConnectionRefusedError: [Errno 111] Connect call failed ('127.0.0.1', 33713)
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "/usr/local/lib/python3.13/site-packages/modal/_output/pty.py", line 223, in get_app_logs_loop
+    app_done = await _get_logs()
+               ^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.13/site-packages/modal/_output/pty.py", line 180, in _get_logs
+    async for log_batch in client._stub.AppGetLogs.unary_stream(request):
+    ...<35 lines>...
+            await stop_pty_shell()
+  File "/usr/local/lib/python3.13/site-packages/modal/_grpc_client.py", line 196, in unary_stream
+    async for response in self.client._call_stream(self.wrapped_method, request, metadata=metadata):
+        yield response
+  File "/usr/local/lib/python3.13/site-packages/modal/client.py", line 576, in _call_stream
+    await self._call_safely(stream.send_message(request, end=True), f"{grpclib_method.name}.send_message")
+  File "/usr/local/lib/python3.13/site-packages/modal/client.py", line 519, in _call_safely
+    return await request_task
+           ^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.13/site-packages/grpclib/client.py", line 242, in send_message
+    await self.send_request()
+  File "/usr/local/lib/python3.13/site-packages/grpclib/client.py", line 174, in send_request
+    protocol = await self._channel.__connect__()
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.13/site-packages/modal/_utils/grpc_utils.py", line 137, in __connect__
+    return await super().__connect__()
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.13/site-packages/grpclib/client.py", line 748, in __connect__
+    self._protocol = await self._create_connection()
+                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.13/site-packages/modal/_utils/grpc_utils.py", line 147, in _create_connection
+    protocol = await self._open_connection()
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.13/site-packages/modal/_utils/grpc_utils.py", line 171, in _open_connection
+    protocol = await create_proxied_connection(
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    ...<5 lines>...
+    )
+    ^
+  File "/usr/local/lib/python3.13/site-packages/modal/_utils/proxy_support.py", line 83, in create_proxied_connection
+    sock = await proxy.connect(host, port)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.13/site-packages/python_socks/async_/asyncio/_proxy.py", line 71, in connect
+    return await self._connect(
+           ^^^^^^^^^^^^^^^^^^^^
+    ...<3 lines>...
+    )
+    ^
+  File "/usr/local/lib/python3.13/site-packages/python_socks/async_/asyncio/_proxy.py", line 104, in _connect
+    raise ProxyConnectionError(e.errno, msg) from e
+python_socks._errors.ProxyConnectionError: [Errno 111] Could not connect to proxy 127.0.0.1:33713 [Connect call failed ('127.0.0.1', 33713)]

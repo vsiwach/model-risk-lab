@@ -1,0 +1,18 @@
+╭───────────────────── Traceback (most recent call last) ──────────────────────╮
+│ /usr/local/lib/python3.13/site-packages/modal/cli/import_refs.py:132 in      │
+│ import_file_or_module                                                        │
+│                                                                              │
+│   131 │   │   │   with execution_context._import_context():                  │
+│ ❱ 132 │   │   │   │   spec.loader.exec_module(module)                        │
+│   133 │   │   except Exception as exc:                                       │
+│ <frozen importlib._bootstrap_external>:1023 in exec_module                   │
+│                                                                              │
+│ <frozen importlib._bootstrap_external>:1160 in get_code                      │
+│                                                                              │
+│ <frozen importlib._bootstrap_external>:1218 in get_data                      │
+│                                                                              │
+╰──────────────────────────────────────────────────────────────────────────────╯
+FileNotFoundError: [Errno 2] No such file or directory: 
+'/tmp/claude-0/-home-claude/2804e80a-3d12-539b-8bf2-9a969b5fc486/scratchpad/guar
+d_probe.py'
+exit=1
