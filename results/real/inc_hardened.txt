@@ -1,0 +1,1 @@
+hardened: attack success 30.6% [21, 40], unsafe executed 27.8% [18, 38], blocked 0.0% [0, 0], MTTR xnan, false positives 0.0% [0, 0]

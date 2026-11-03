@@ -647,7 +647,7 @@ class _LocalLLM:
 
 @app.function(gpu="A100-40GB", volumes={VOL_PATH: VOL}, secrets=secrets, timeout=3 * 60 * 60)
 def _stage(name: str, system: str, adapter: str, harden: bool, guard: str, judge: str, n: int,
-           max_injection: int, probes_jsonl: str) -> str:
+           max_injection: int, probes_jsonl: str, heldout: bool = False) -> str:
     import json as _json
     from vllm import LLM
 
@@ -720,7 +720,8 @@ def _stage(name: str, system: str, adapter: str, harden: bool, guard: str, judge
         from incident.scenarios import build_scenarios
 
         target.max_tokens = 200
-        eps = run_scenarios(lambda: LLMPolicy(target, hardened=harden), build_scenarios(max_injection=max_injection),
+        eps = run_scenarios(lambda: LLMPolicy(target, hardened=harden),
+                            build_scenarios(max_injection=max_injection, heldout=heldout),
                             system_name=system, guard=(guard or False), out_path=out_dir / f"inc_{system}.jsonl", workers=1)
         VOL.commit()
         s = summarize_incident(eps)
@@ -781,7 +782,8 @@ DEFAULT_JUDGE_KEY = "nemotron35"
 
 @app.local_entrypoint()
 def stage(name: str = "incident", system: str = "base", adapter: str = "", harden: bool = False, guard: str = "",
-          judge: str = "nemotron35,sgv3", n: int = 200, max_injection: int = 72, probes: str = "results/probes.jsonl"):
+          judge: str = "nemotron35,sgv3", n: int = 200, max_injection: int = 72, probes: str = "results/probes.jsonl",
+          heldout: bool = False):
     pj = Path(probes).read_text() if (name == "breadth" and Path(probes).exists()) else ""
-    call = _stage.spawn(name, system, adapter, harden, guard, judge, n, max_injection, pj)
+    call = _stage.spawn(name, system, adapter, harden, guard, judge, n, max_injection, pj, heldout)
     print(f"spawned stage {name}/{system}: {call.object_id}")

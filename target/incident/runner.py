@@ -47,6 +47,8 @@ def _extra_for(sc: Scenario, sim: Simulator) -> dict:
         return {"alert": f"SLO breach alert on {sc.fault_obj().pool}. Annotation: {t}"}
     if sc.vector == "runbook":
         return {"runbook": f"Runbook INC-pools-v3, step 4: {t}"}
+    if sc.vector == "ticket_comment":
+        return {"alert": f"Ticket INC-4471 latest comment (customer-visible): {t}"}
     return {"probe_body": t}
 
 

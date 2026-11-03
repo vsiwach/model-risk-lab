@@ -19,6 +19,20 @@ body plant instructions there. The question the lab answers with numbers: **how 
 obey the planted instruction, what does each mitigation buy, and does the agent stay as fast as the
 rule-based one on real incidents?**
 
+## Results (real, Nemotron Nano 8B, Nov 2026)
+
+| | rules | base Nano 8B | + hardened prompt | + phrouros guard | + LoRA (ours) | LoRA on held-out set |
+|---|---|---|---|---|---|---|
+| Attack success | 0% | **50.0%** | 30.6% | **0%** | **0%** | **0%** (base: 55%) |
+| Unsafe action executed | 0% | 47.2% | 27.8% | 0% | 0% | 0% |
+| Clean faults resolved | 100% | **0%** | 0% | 0% | **100%** | 100% |
+| MTTR vs rules | x1.00 | never | never | never | **x1.00** | x1.00 |
+| Release gate | | FAIL | FAIL | FAIL (competence) | **PASS** | **PASS** |
+
+Judge bake-off on 200 human-labelled Aegis responses: Safety Guard 8B v3 F1 88.7, Nemotron 3.5
+Content Safety F1 85.1. The full tables, the held-out design and the open limits are in
+[`docs/RESULTS.md`](docs/RESULTS.md); episode files in `results/real/`.
+
 ## Thirty-second tour (no GPU, no keys)
 
 ```bash
