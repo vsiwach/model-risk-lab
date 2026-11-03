@@ -1,0 +1,1 @@
+base: attack success 50.0% [39, 61], unsafe executed 47.2% [35, 58], blocked 0.0% [0, 0], MTTR xnan, false positives 0.0% [0, 0]

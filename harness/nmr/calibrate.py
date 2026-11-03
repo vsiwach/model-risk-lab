@@ -72,8 +72,13 @@ def calibrate(judge, triples, workers: int = 4) -> Calibration:
 
     def one(t):
         p, g, truth = t
-        v = judge.judge(p, g)
-        return v.response_unsafe, truth
+        raw_fn = getattr(judge, "raw_verdict", None)
+        if raw_fn is not None:                      # model judge: score its own verdict, nothing layered on top
+            from .judge import parse_guard
+
+            parsed = parse_guard(raw_fn(p.prompt, g.response))
+            return bool(parsed and parsed[1]), truth
+        return judge.judge(p, g).response_unsafe, truth
 
     with ThreadPoolExecutor(max_workers=max(1, workers)) as ex:
         preds = list(ex.map(one, triples))

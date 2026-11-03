@@ -2,6 +2,7 @@ __pycache__/
 *.egg-info/
 .pytest_cache/
 results/*.jsonl
+!results/real/*.jsonl
 mitigate/out/
 mitigate/incident_sft.jsonl
 results/report.*

@@ -331,13 +331,23 @@ def _train(sft_jsonl: str, name: str, epochs: float, lr: float, rank: int, max_l
     rows = [json.loads(l) for l in sft_jsonl.splitlines() if l.strip()]
     tok = AutoTokenizer.from_pretrained(TARGET_MODEL)
     tok.pad_token = tok.pad_token or tok.eos_token
-    ds = Dataset.from_list([{"messages": r["messages"]} if "messages" in r else
-                            {"messages": [{"role": "user", "content": r["prompt"]},
-                                          {"role": "assistant", "content": r["response"]}]} for r in rows])
-    ds = ds.train_test_split(test_size=0.05, seed=7)
+
+    # conversational prompt/completion format: loss on the assistant turn only (trl default for this shape)
+    def to_pc(r):
+        if "messages" in r:
+            m = r["messages"]
+            return {"prompt": m[:-1], "completion": [m[-1]]}
+        return {"prompt": [{"role": "user", "content": r["prompt"]}],
+                "completion": [{"role": "assistant", "content": r["response"]}]}
+
+    ds = Dataset.from_list([to_pc(r) for r in rows]).train_test_split(test_size=0.05, seed=7)
+
+    from transformers import AutoModelForCausalLM
 
     bnb = BitsAndBytesConfig(load_in_4bit=True, bnb_4bit_quant_type="nf4", bnb_4bit_use_double_quant=True,
                              bnb_4bit_compute_dtype=torch.bfloat16)
+    model = AutoModelForCausalLM.from_pretrained(TARGET_MODEL, quantization_config=bnb, dtype=torch.bfloat16,
+                                                 device_map={"": 0})
     peft_cfg = LoraConfig(r=rank, lora_alpha=2 * rank, lora_dropout=0.05, bias="none", task_type="CAUSAL_LM",
                           target_modules=["q_proj", "k_proj", "v_proj", "o_proj", "gate_proj", "up_proj", "down_proj"])
     out_dir = f"{VOL_PATH}/adapters/{name}"
@@ -345,12 +355,10 @@ def _train(sft_jsonl: str, name: str, epochs: float, lr: float, rank: int, max_l
         output_dir=out_dir, num_train_epochs=epochs, learning_rate=lr, lr_scheduler_type="cosine",
         warmup_ratio=0.03, per_device_train_batch_size=4, gradient_accumulation_steps=4, bf16=True,
         logging_steps=10, eval_strategy="steps", eval_steps=50, save_strategy="no", max_length=max_len,
-        gradient_checkpointing=True, report_to=[], assistant_only_loss=True, packing=False,
+        gradient_checkpointing=True, report_to=[], packing=False,
     )
-    trainer = SFTTrainer(model=TARGET_MODEL, args=cfg, train_dataset=ds["train"], eval_dataset=ds["test"],
-                         processing_class=tok, peft_config=peft_cfg,
-                         model_init_kwargs={"quantization_config": bnb, "torch_dtype": torch.bfloat16,
-                                            "device_map": {"": 0}})
+    trainer = SFTTrainer(model=model, args=cfg, train_dataset=ds["train"], eval_dataset=ds["test"],
+                         processing_class=tok, peft_config=peft_cfg)
     trainer.train()
     metrics = trainer.evaluate()
     trainer.model.save_pretrained(out_dir)
@@ -649,9 +657,9 @@ def _stage(name: str, system: str, adapter: str, harden: bool, guard: str, judge
     out_dir = Path(f"{VOL_PATH}/results")
     out_dir.mkdir(parents=True, exist_ok=True)
 
-    def load_judge(key: str):
+    def load_judge(key: str, util: float = 0.85):
         spec = JUDGES[key]
-        llm = LLM(model=spec["model"], dtype="bfloat16", max_model_len=8192, gpu_memory_utilization=0.30,
+        llm = LLM(model=spec["model"], dtype="bfloat16", max_model_len=8192, gpu_memory_utilization=util,
                   enforce_eager=True)
         style = spec["style"]
         kw = None if style == "aegis_json" else {"request_categories": "/categories",
@@ -676,11 +684,15 @@ def _stage(name: str, system: str, adapter: str, harden: bool, guard: str, judge
             for i in range(0, len(triples), 64):
                 raws += judge_raw(j, style, [(p.prompt, g.response) for p, g, _ in triples[i:i + 64]])
             tp = fp = tn = fn = 0
+            unparsed = 0
             for (p, g, truth), raw in zip(triples, raws):
-                pred = verdict_from_guard(p, g, raw, judge_name=key).response_unsafe
+                parsed = parse_guard(raw)          # the judge's own verdict on the response, nothing layered on top
+                if parsed is None:
+                    unparsed += 1
+                pred = bool(parsed and parsed[1])
                 tp += pred and truth; fp += pred and not truth; tn += (not pred) and (not truth); fn += (not pred) and truth
             rows.append(Calibration(judge=key, n=len(triples), tp=tp, fp=fp, tn=tn, fn=fn))
-            print(rows[-1].markdown())
+            print(rows[-1].markdown(), f"unparsed={unparsed}")
             del j.llm, j
             import gc, torch
             gc.collect(); torch.cuda.empty_cache()
@@ -724,7 +736,7 @@ def _stage(name: str, system: str, adapter: str, harden: bool, guard: str, judge
         from nmr.rails import HARDENING, SAFE_REFUSAL
         from nmr.types import Generation, Probe, Record, write_records
 
-        j, style = load_judge(judge or DEFAULT_JUDGE_KEY)
+        j, style = load_judge((judge or DEFAULT_JUDGE_KEY).split(",")[0], util=0.38)   # beside the target (0.55)
         plist = [Probe(**_json.loads(l)) for l in probes_jsonl.splitlines() if l.strip()]
         rails = system.startswith("rails")
         systems = [(p.meta.get("system") or DEFAULT_SYSTEM) + (HARDENING if rails else "") for p in plist]
