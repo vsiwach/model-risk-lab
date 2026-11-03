@@ -65,7 +65,8 @@ image = (
 )
 
 app = modal.App(APP, image=image)
-secrets = [modal.Secret.from_name("huggingface", required_keys=[])] if os.environ.get("NMR_HF_SECRET", "1") == "1" else []
+# set NMR_HF_SECRET=1 to attach a Modal secret named "huggingface" (HF_TOKEN) for gated repos; off by default
+secrets = [modal.Secret.from_name("huggingface", required_keys=[])] if os.environ.get("NMR_HF_SECRET", "0") == "1" else []
 
 
 # --------------------------------------------------------------------------------------- inference
