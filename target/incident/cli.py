@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import argparse
 import logging
+import os
 from pathlib import Path
 
 
@@ -68,7 +69,10 @@ def cmd_temporal(args) -> None:
     options = {"mock_compliance": args.mock_compliance, "hardened": args.harden,
                "approval_timeout_s": args.approval_timeout}
     if args.real:
-        options["real"] = {"model": args.model, "base_url": args.base_url, "max_tokens": args.max_tokens}
+        options["real"] = {"model": args.model, "base_url": args.base_url, "max_tokens": args.max_tokens,
+                           "api_key": args.api_key or os.environ.get("MRL_SERVE_KEY")}
+        if args.no_think:   # reasoning models: ask for the answer, not the chain of thought (vLLM / NIM chat template switch)
+            options["real"]["extra_body"] = {"chat_template_kwargs": {"enable_thinking": False}}
     approver = None
     if args.approve:
         from .approve import auto_approver
@@ -79,11 +83,13 @@ def cmd_temporal(args) -> None:
                        concurrency=args.concurrency, options=options,
                        ledger_path=Path(args.ledger) if args.ledger else None,
                        policy_path=Path(args.policy) if args.policy else None,
-                       codec=args.codec, blob_dir=Path(args.blob_dir) if args.blob_dir else None, approver=approver)
+                       codec=args.codec, blob_dir=Path(args.blob_dir) if args.blob_dir else None, approver=approver,
+                       rate=args.rate)
     s = summarize_incident(run.episodes)
     print(f"{args.system}/{args.guard}: attack success {s.attack_success.as_pct()}, unsafe executed "
           f"{s.unsafe_executed.as_pct()}, blocked {s.blocked.as_pct()}, resolved {s.resolved.as_pct()}, "
-          f"time to resolve x{s.mttr_ratio:.2f}, false positives {s.false_positive.as_pct()}, wall {run.wall_s:.1f}s")
+          f"time to resolve x{s.mttr_ratio:.2f}, false positives {s.false_positive.as_pct()}, wall {run.wall_s:.1f}s"
+          + (f", FAILED episodes {len(run.failed)}/{len(scenarios)} (not in the output)" if run.failed else ""))
 
 
 def cmd_approve(args) -> None:
@@ -148,7 +154,9 @@ def main(argv=None) -> None:
     t.add_argument("--real", action="store_true", help="use the OpenAI-compatible backend instead of the mock")
     t.add_argument("--model", default="nvidia/llama-3.1-nemotron-nano-8b-v1")
     t.add_argument("--base-url", default="https://integrate.api.nvidia.com/v1")
+    t.add_argument("--api-key", default=None, help="bearer token for --base-url (default MRL_SERVE_KEY, then NVIDIA_API_KEY)")
     t.add_argument("--max-tokens", type=int, default=200)
+    t.add_argument("--no-think", action="store_true", help="disable the model's thinking mode (reasoning models return only the JSON)")
     t.add_argument("--harden", action="store_true")
     t.add_argument("--mock-compliance", type=float, default=0.5)
     t.add_argument("--seed", type=int, default=7)
@@ -156,6 +164,7 @@ def main(argv=None) -> None:
     t.add_argument("--limit", type=int, default=0)
     t.add_argument("--scenario", action="append", help="scenario id or goal to keep (repeatable)")
     t.add_argument("--concurrency", type=int, default=8)
+    t.add_argument("--rate", type=float, default=None, help="max activities per second on the worker (hosted model rate limits)")
     t.add_argument("--address", default="localhost:7233")
     t.add_argument("--ledger", default="results/temporal/ledger.jsonl")
     t.add_argument("--policy", default=None, help="runtime policy YAML (default mitigate/phrouros-policy.yaml)")

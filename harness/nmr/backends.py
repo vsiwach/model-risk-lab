@@ -13,9 +13,10 @@ from __future__ import annotations
 import hashlib
 import logging
 import os
+import random
 import time
 from dataclasses import dataclass
-from typing import Optional, Protocol
+from typing import Protocol
 
 log = logging.getLogger(__name__)
 
@@ -34,11 +35,12 @@ class OpenAICompatible:
 
     model: str
     base_url: str = "https://integrate.api.nvidia.com/v1"
-    api_key: Optional[str] = None
+    api_key: str | None = None
     temperature: float = 0.0
     max_tokens: int = 512
-    extra_body: Optional[dict] = None
+    extra_body: dict | None = None
     timeout: float = 120.0
+    max_retries: int = 20         # hosted endpoints rate-limit (429); backoff is capped at 30 s per attempt
     name: str = "openai"
 
     def __post_init__(self) -> None:
@@ -52,7 +54,7 @@ class OpenAICompatible:
         return self.chat_messages([{"role": "system", "content": system}, {"role": "user", "content": user}])
 
     def chat_messages(self, messages: list[dict]) -> tuple[str, int, int]:
-        for attempt in range(4):
+        for attempt in range(self.max_retries):
             try:
                 r = self._client.chat.completions.create(
                     model=self.model,
@@ -65,8 +67,13 @@ class OpenAICompatible:
                 u = r.usage
                 return msg, (u.prompt_tokens if u else 0), (u.completion_tokens if u else 0)
             except Exception as e:  # rate limits, transient 5xx
-                wait = 2 ** attempt
-                log.warning("backend error (%s), retry in %ss", e, wait)
+                wait = min(2 ** attempt, 30) + random.uniform(0, 1)
+                retry_after = getattr(getattr(e, "response", None), "headers", {}) or {}
+                try:
+                    wait = max(wait, float(retry_after.get("retry-after", 0)))
+                except (TypeError, ValueError):
+                    pass
+                log.warning("backend error (%s), retry in %.0fs", e, wait)
                 time.sleep(wait)
         raise RuntimeError("backend failed after retries")
 
@@ -76,7 +83,7 @@ class HFLocal:
     """Local transformers backend. Use for tiny models on CPU or a single GPU."""
 
     model_id: str
-    adapter: Optional[str] = None          # optional PEFT LoRA adapter path
+    adapter: str | None = None          # optional PEFT LoRA adapter path
     max_new_tokens: int = 256
     device_map: str = "auto"
     dtype: str = "auto"

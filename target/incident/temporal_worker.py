@@ -30,10 +30,11 @@ from pathlib import Path
 from typing import Any
 
 from temporalio import activity, workflow
-from temporalio.client import Client
+from temporalio.client import Client, WorkflowFailureError
 from temporalio.common import RetryPolicy
 from temporalio.exceptions import ActivityError, ApplicationError
 from temporalio.worker import Worker
+from temporalio.worker.workflow_sandbox import SandboxedWorkflowRunner, SandboxRestrictions
 
 with workflow.unsafe.imports_passed_through():
     from .llm import HARDENING, SYSTEM, build_packet, parse_decision
@@ -46,7 +47,7 @@ with workflow.unsafe.imports_passed_through():
 log = logging.getLogger(__name__)
 
 TASK_QUEUE = "incident-v0"
-ACTIVITY_TIMEOUT = timedelta(seconds=60)
+ACTIVITY_TIMEOUT = timedelta(seconds=300)   # a rate-limited model call may back off for minutes
 NO_RETRY = RetryPolicy(maximum_attempts=1)
 APPROVAL_HEADER = "x-phrouros-approval"
 APPROVAL_ARG = "_approval_token"   # stripped from the args and moved into the header by the interceptor
@@ -111,7 +112,8 @@ def _make_policy(system_name: str, real: dict | None, mock_compliance: float, ha
 
         from .llm import LLMPolicy
 
-        be = OpenAICompatible(model=real["model"], base_url=real["base_url"], max_tokens=real.get("max_tokens", 200))
+        be = OpenAICompatible(model=real["model"], base_url=real["base_url"], max_tokens=real.get("max_tokens", 200),
+                              extra_body=real.get("extra_body") or None, api_key=real.get("api_key") or None)
         return LLMPolicy(be, hardened=hardened)
     from .mock import MockBackend, MockLLMPolicy
 
@@ -301,6 +303,7 @@ class TemporalRun:
     workflow_ids: list[str] = field(default_factory=list)
     wall_s: float = 0.0
     results: list[dict] = field(default_factory=list)
+    failed: list[str] = field(default_factory=list)      # scenario ids whose workflow failed
 
 
 def _oracle(sc: Scenario) -> int | None:
@@ -311,15 +314,21 @@ def _oracle(sc: Scenario) -> int | None:
 
 
 def build_worker(client: Client, guard: str, ledger_path: Path | None = None, policy_path: Path | None = None,
-                 concurrency: int = 8, task_queue: str = TASK_QUEUE) -> Worker:
+                 concurrency: int = 8, task_queue: str = TASK_QUEUE, rate: float | None = None) -> Worker:
     interceptors = []
     if guard == "phrouros":
         from mitigate.temporal.interceptor import PhrourosInterceptor
 
         interceptors = [PhrourosInterceptor.from_paths(ledger_path=ledger_path, policy_path=policy_path)]
+    # The lab packages are deterministic plain Python; passing them through the sandbox avoids re-importing
+    # the whole tree for every workflow instance (which stalled cold starts for 12 s and once raced into a
+    # half-initialised module under eight concurrent starts). The workflow code itself stays sandboxed.
+    runner = SandboxedWorkflowRunner(
+        restrictions=SandboxRestrictions.default.with_passthrough_modules("incident", "mitigate", "govern", "nmr", "yaml"))
     return Worker(client, task_queue=task_queue, workflows=[IncidentWorkflow], activities=ACTIVITIES,
                   activity_executor=ThreadPoolExecutor(max_workers=max(concurrency, 1) * 2),
-                  max_concurrent_activities=concurrency, interceptors=interceptors)
+                  max_concurrent_activities=concurrency, max_activities_per_second=rate, interceptors=interceptors,
+                  workflow_runner=runner)
 
 
 async def connect(address: str = "localhost:7233", codec: bool = False, blob_dir: Path | None = None,
@@ -337,7 +346,7 @@ async def run_temporal_async(scenarios: list[Scenario], system_name: str, guard:
                              *, address: str = "localhost:7233", concurrency: int = 8, options: dict | None = None,
                              ledger_path: Path | None = None, policy_path: Path | None = None, codec: bool = False,
                              blob_dir: Path | None = None, approver=None, client: Client | None = None,
-                             task_queue: str = TASK_QUEUE) -> TemporalRun:
+                             task_queue: str = TASK_QUEUE, rate: float | None = None) -> TemporalRun:
     """Run every scenario as an `IncidentWorkflow` on a worker started in this process.
 
     `approver`, when given, is an async callable `(handle, approval_id)` invoked for each pending
@@ -364,13 +373,18 @@ async def run_temporal_async(scenarios: list[Scenario], system_name: str, guard:
             side = asyncio.create_task(approver(handle, client)) if approver is not None else None
             try:
                 res = await handle.result()
+            except WorkflowFailureError as e:
+                # one failed episode (a model endpoint that never recovered, a lost simulator) must not
+                # throw away the rest of the run; it is reported, counted, and left out of the summary
+                log.error("workflow %s failed: %s", wf_id, e.cause or e)
+                return sc, None, time.perf_counter() - t0
             finally:
                 if side is not None:
                     side.cancel()
             return sc, {**res, "_workflow_id": wf_id}, time.perf_counter() - t0
 
     worker = build_worker(client, guard, ledger_path=ledger_path, policy_path=policy_path, concurrency=concurrency,
-                          task_queue=task_queue)
+                          task_queue=task_queue, rate=rate)
     t_wall = time.perf_counter()
     async with worker:
         done = await asyncio.gather(*(one(sc) for sc in scenarios))
@@ -381,6 +395,9 @@ async def run_temporal_async(scenarios: list[Scenario], system_name: str, guard:
 
         ledger = get_ledger(ledger_path)
     for sc, res, dt in done:
+        if res is None:
+            run.failed.append(sc.id)
+            continue
         wf_id = res.pop("_workflow_id")
         run.workflow_ids.append(wf_id)
         if ledger is not None:
@@ -399,6 +416,8 @@ async def run_temporal_async(scenarios: list[Scenario], system_name: str, guard:
             for e in run.episodes:
                 f.write(e.to_json() + "\n")
         log.info("wrote %d episodes to %s (wall %.1fs)", len(run.episodes), out_path, run.wall_s)
+    if run.failed:
+        log.error("%d of %d episodes failed and are not in the output: %s", len(run.failed), len(scenarios), run.failed)
     return run
 
 

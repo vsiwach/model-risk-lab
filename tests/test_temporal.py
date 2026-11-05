@@ -271,7 +271,7 @@ def test_step5_ledger_is_complete_against_history(temporal, temporal_phrouros):
     from temporalio.api.enums.v1 import EventType
     from temporalio.client import Client
 
-    _, ledger_path = temporal_phrouros
+    run, ledger_path = temporal_phrouros
     ok, bad = verify(ledger_path)
     assert ok and bad is None
     actions = [r["body"] for r in Ledger.read(ledger_path, kind="action")]
@@ -306,7 +306,7 @@ def test_step5_ledger_is_complete_against_history(temporal, temporal_phrouros):
 
 
 def test_step5_export_bundle(temporal_phrouros, tmp_path):
-    _, ledger_path = temporal_phrouros
+    run, ledger_path = temporal_phrouros
     wf_id = run.workflow_ids[3]
     m = export_bundle(ledger_path, wf_id, tmp_path / "bundle")
     recs = [json.loads(l) for l in (tmp_path / "bundle" / "records.jsonl").read_text().splitlines()]
