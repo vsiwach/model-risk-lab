@@ -272,3 +272,7 @@ Provenance: the incident environment, allowlist and invariants are ported from t
 [baseten-mvp](https://github.com/vsiwach/baseten-mvp); the runtime policy guard follows the enforce layer
 of the author's [phrouros](https://github.com/vsiwach/phrouros) (an API-compatible shim is vendored so the
 lab runs standalone).
+
+## Next: Phrouros on Temporal
+
+The runtime policy guard is moving from a proxy into the Temporal worker: every LLM and tool call becomes an activity that is authorized before it runs and recorded in a signed ledger. Design and PRD: [docs/phrouros-on-temporal.md](docs/phrouros-on-temporal.md). Build prompts: [spike](docs/BUILD_PROMPT_temporal_phrouros_spike.md), [open-core product](docs/BUILD_PROMPT_phrouros_open_core.md).
