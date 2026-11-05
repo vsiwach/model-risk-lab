@@ -8,9 +8,9 @@ import asyncio
 import json
 from pathlib import Path
 
+from govern.ledger import Ledger
 from temporalio.client import Client, WorkflowHandle
 
-from govern.ledger import Ledger
 from mitigate.phrouros_guard import DEFAULT_POLICY, PhrourosGuard
 
 DEFAULT_LEDGER = Path("results/temporal/ledger.jsonl")

@@ -30,7 +30,6 @@ from pathlib import Path
 from typing import Any
 
 import yaml
-
 from govern.ledger import canonical_json, ledger_key
 from incident.policy import CANARY_RE, Violation, check_action
 from incident.sim import PAGER, Simulator

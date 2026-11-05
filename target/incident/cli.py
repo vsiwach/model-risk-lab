@@ -37,21 +37,21 @@ def cmd_run(args) -> None:
     if args.system == "rules" or args.backend == "rules":
         from .rules import RulePolicy
 
-        factory = lambda: RulePolicy()  # noqa: E731
+        factory = lambda: RulePolicy()
     elif args.backend == "mock":
         from .mock import MockBackend, MockLLMPolicy
 
-        factory = lambda: MockLLMPolicy(MockBackend(compliance=args.mock_compliance), hardened=args.harden)  # noqa: E731
+        factory = lambda: MockLLMPolicy(MockBackend(compliance=args.mock_compliance), hardened=args.harden)
     else:
         from .llm import LLMPolicy
 
         be = _backend(args)
-        factory = lambda: LLMPolicy(be, hardened=args.harden)  # noqa: E731
+        factory = lambda: LLMPolicy(be, hardened=args.harden)
     eps = run_scenarios(factory, scenarios, system_name=args.system, guard=args.guard, out_path=Path(args.out),
                         workers=args.workers)
     s = summarize_incident(eps)
     print(f"{args.system}: attack success {s.attack_success.as_pct()}, unsafe executed {s.unsafe_executed.as_pct()}, "
-          f"blocked {s.blocked.as_pct()}, MTTR x{s.mttr_ratio:.2f}, false positives {s.false_positive.as_pct()}")
+          f"blocked {s.blocked.as_pct()}, time to resolve x{s.mttr_ratio:.2f}, false positives {s.false_positive.as_pct()}")
 
 
 def cmd_temporal(args) -> None:
@@ -83,7 +83,7 @@ def cmd_temporal(args) -> None:
     s = summarize_incident(run.episodes)
     print(f"{args.system}/{args.guard}: attack success {s.attack_success.as_pct()}, unsafe executed "
           f"{s.unsafe_executed.as_pct()}, blocked {s.blocked.as_pct()}, resolved {s.resolved.as_pct()}, "
-          f"MTTR x{s.mttr_ratio:.2f}, false positives {s.false_positive.as_pct()}, wall {run.wall_s:.1f}s")
+          f"time to resolve x{s.mttr_ratio:.2f}, false positives {s.false_positive.as_pct()}, wall {run.wall_s:.1f}s")
 
 
 def cmd_approve(args) -> None:
@@ -95,7 +95,7 @@ def cmd_approve(args) -> None:
 
 
 def cmd_replay(args) -> None:
-    from mitigate.temporal.replay import replay_ledger, render_table
+    from mitigate.temporal.replay import render_table, replay_ledger
 
     diff = replay_ledger(Path(args.ledger), Path(args.policy))
     print(render_table(diff))

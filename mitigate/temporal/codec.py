@@ -17,15 +17,14 @@ import dataclasses
 import hashlib
 import json
 import re
+from collections.abc import Iterable, Sequence
 from pathlib import Path
-from typing import Iterable, Sequence
 
 import temporalio.converter
-from temporalio.api.common.v1 import Payload
-from temporalio.converter import DataConverter, PayloadCodec
-
 from govern.ledger import Ledger, get_ledger
 from incident.sim import ADMIN_TOKEN
+from temporalio.api.common.v1 import Payload
+from temporalio.converter import DataConverter, PayloadCodec
 
 CLAIMCHECK_ENCODING = b"phrouros/claimcheck"
 DEFAULT_SIZE_CAP = 32 * 1024

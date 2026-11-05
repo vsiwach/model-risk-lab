@@ -25,6 +25,7 @@ from pathlib import Path
 from typing import Any
 
 import temporalio.converter
+from govern.ledger import Ledger, get_ledger
 from temporalio import activity
 from temporalio.exceptions import ApplicationError
 from temporalio.worker import (
@@ -35,7 +36,6 @@ from temporalio.worker import (
     WorkflowInterceptorClassInput,
 )
 
-from govern.ledger import Ledger, get_ledger
 from mitigate.phrouros_guard import DEFAULT_POLICY, ActionRecord, PhrourosGuard, Verdict, args_hash_of
 
 from .headers import APPROVAL_ARG, APPROVAL_HEADER, SIM_ACTIVITY, workflow_interceptor_class
@@ -87,7 +87,7 @@ class PhrourosInterceptor(Interceptor):
 
     @classmethod
     def from_paths(cls, ledger_path: Path | None = None, policy_path: Path | None = None,
-                   key: str | None = None) -> "PhrourosInterceptor":
+                   key: str | None = None) -> PhrourosInterceptor:
         guard = PhrourosGuard(policy_path=Path(policy_path or DEFAULT_POLICY), key=key)
         return cls(guard, get_ledger(Path(ledger_path or DEFAULT_LEDGER), key))
 

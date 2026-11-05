@@ -23,9 +23,10 @@ import os
 import shutil
 import threading
 import uuid
+from collections.abc import Iterator
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Iterator
+from typing import Any
 
 DEFAULT_KEY = "phrouros-dev-key-change-me"
 GENESIS = "0" * 64
@@ -122,11 +123,11 @@ class Ledger:
         return out
 
 
-_LEDGERS: dict[Path, "Ledger"] = {}
+_LEDGERS: dict[Path, Ledger] = {}
 _LEDGERS_LOCK = threading.Lock()
 
 
-def get_ledger(path: str | Path, key: str | None = None) -> "Ledger":
+def get_ledger(path: str | Path, key: str | None = None) -> Ledger:
     """One `Ledger` per file per process, so the interceptor and the payload codec share the chain head."""
     p = Path(path).resolve()
     with _LEDGERS_LOCK:

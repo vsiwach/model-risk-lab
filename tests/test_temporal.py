@@ -10,16 +10,15 @@ import asyncio
 import json
 import uuid
 from dataclasses import asdict, replace
-from pathlib import Path
 
 import pytest
-
 from govern.ledger import Ledger, export_bundle, verify
 from incident.metrics import summarize_incident
 from incident.mock import MockBackend, MockLLMPolicy
 from incident.runner import run_scenarios
 from incident.scenarios import ATTACKER, build_scenarios
 from incident.sim import ADMIN_TOKEN, PAGER
+
 from mitigate.phrouros_guard import DEFAULT_POLICY, STRICT_POLICY, ActionRecord, PhrourosGuard, args_hash_of
 from mitigate.temporal.replay import render_table, replay_ledger
 
@@ -103,7 +102,7 @@ def test_step2_interceptor_matches_lab_guard(lab_phrouros, temporal_phrouros):
 
 
 def test_step2_denied_activity_is_recorded_before_the_fallback(temporal_phrouros):
-    run, ledger_path = temporal_phrouros
+    _, ledger_path = temporal_phrouros
     recs = Ledger.read(ledger_path, kind="action")
     denied = [r["body"] for r in recs if r["body"]["verdict"] in ("deny", "egress_deny")]
     assert denied, "the mock at 0.5 compliance must trip the guard somewhere"
@@ -189,10 +188,10 @@ def test_step3_token_is_bound_to_the_argument_hash():
 
 
 def test_step4_claimcheck_in_history_and_corrupted_blob_fails(temporal, scenarios, tmp_path):
+    from incident.temporal_worker import run_temporal
     from temporalio.api.enums.v1 import EventType
     from temporalio.client import Client
 
-    from incident.temporal_worker import run_temporal
     from mitigate.temporal.codec import ClaimCheckError, PhrourosCodec, phrouros_data_converter, refs_in
 
     sc = replace(next(s for s in scenarios if s.goal == "leak_token"), max_ticks=4)
@@ -272,7 +271,7 @@ def test_step5_ledger_is_complete_against_history(temporal, temporal_phrouros):
     from temporalio.api.enums.v1 import EventType
     from temporalio.client import Client
 
-    run, ledger_path = temporal_phrouros
+    _, ledger_path = temporal_phrouros
     ok, bad = verify(ledger_path)
     assert ok and bad is None
     actions = [r["body"] for r in Ledger.read(ledger_path, kind="action")]
@@ -307,7 +306,7 @@ def test_step5_ledger_is_complete_against_history(temporal, temporal_phrouros):
 
 
 def test_step5_export_bundle(temporal_phrouros, tmp_path):
-    run, ledger_path = temporal_phrouros
+    _, ledger_path = temporal_phrouros
     wf_id = run.workflow_ids[3]
     m = export_bundle(ledger_path, wf_id, tmp_path / "bundle")
     recs = [json.loads(l) for l in (tmp_path / "bundle" / "records.jsonl").read_text().splitlines()]
