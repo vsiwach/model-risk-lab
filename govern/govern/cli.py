@@ -5,6 +5,8 @@
   govern verify results/certificate.json
   govern verify --ledger results/temporal/ledger.jsonl          # walk the signed chain; exit 1 if broken
   govern ledger export --ledger results/temporal/ledger.jsonl --workflow-id <id> --out results/temporal/export/<id>
+  govern ledger stats  --ledger results/temporal/ledger.jsonl    # verdict counts, decision-time percentiles
+  govern ledger check  --ledger results/temporal/ledger.jsonl    # action records vs activity tasks in history
 """
 
 from __future__ import annotations
@@ -64,6 +66,67 @@ def cmd_ledger_export(args) -> None:
     raise SystemExit(0 if m["chain_verified"] else 1)
 
 
+def cmd_ledger_stats(args) -> None:
+    """Verdict counts and guard decision-time percentiles from the action records."""
+    from .ledger import Ledger
+
+    recs = Ledger.read(args.ledger)
+    actions = [r["body"] for r in recs if r["kind"] == "action"]
+    kinds = {}
+    for r in recs:
+        kinds[r["kind"]] = kinds.get(r["kind"], 0) + 1
+    verdicts = {}
+    for b in actions:
+        verdicts[b["verdict"]] = verdicts.get(b["verdict"], 0) + 1
+    ms = sorted(float(b.get("decision_ms", 0.0)) for b in actions)
+
+    def pct(q: float) -> float:
+        return ms[min(len(ms) - 1, int(q * len(ms)))] if ms else float("nan")
+
+    print(f"records: {len(recs)} " + ", ".join(f"{k}={v}" for k, v in sorted(kinds.items())))
+    print("action verdicts: " + ", ".join(f"{k}={v}" for k, v in sorted(verdicts.items())))
+    print(f"guard decision_ms over {len(ms)} action records: p50 {pct(0.5):.3f}, p95 {pct(0.95):.3f}, "
+          f"p99 {pct(0.99):.3f}, max {ms[-1] if ms else float('nan'):.3f}")
+    wfs = {b["workflow_id"] for b in actions}
+    print(f"workflows: {len(wfs)}")
+
+
+def cmd_ledger_check(args) -> None:
+    """Ledger completeness: kind=action records per workflow against activity tasks scheduled in Temporal history."""
+    import asyncio
+
+    from .ledger import Ledger, verify
+
+    async def main() -> int:
+        from temporalio.api.enums.v1 import EventType
+        from temporalio.client import Client
+
+        actions = [r["body"] for r in Ledger.read(args.ledger, kind="action")]
+        by_wf: dict[str, int] = {}
+        for b in actions:
+            by_wf[b["workflow_id"]] = by_wf.get(b["workflow_id"], 0) + 1
+        client = await Client.connect(args.address)
+        total_hist, mismatched = 0, []
+        for wf_id, n in sorted(by_wf.items()):
+            h = 0
+            async for e in client.get_workflow_handle(wf_id).fetch_history_events():
+                if e.event_type == EventType.EVENT_TYPE_ACTIVITY_TASK_SCHEDULED:
+                    h += 1
+            total_hist += h
+            if h != n:
+                mismatched.append((wf_id, n, h))
+        ok, bad = verify(args.ledger, key=args.key)
+        share = (100.0 * len(actions) / total_hist) if total_hist else float("nan")
+        print(f"workflows in ledger: {len(by_wf)}; action records: {len(actions)}; activity tasks in history: {total_hist}; "
+              f"completeness {share:.1f}%; workflows with a mismatch: {len(mismatched)}")
+        for wf_id, n, h in mismatched[:10]:
+            print(f"  {wf_id}: ledger {n} vs history {h}")
+        print(f"chain: {'VALID' if ok else f'INVALID at line {bad}'}")
+        return 0 if (ok and not mismatched and total_hist == len(actions)) else 1
+
+    raise SystemExit(asyncio.run(main()))
+
+
 def main(argv=None) -> None:
     ap = argparse.ArgumentParser(prog="govern")
     sub = ap.add_subparsers(dest="cmd", required=True)
@@ -91,6 +154,14 @@ def main(argv=None) -> None:
     ex.add_argument("--blob-dir", default="results/temporal/blobs")
     ex.add_argument("--key", default=None)
     ex.set_defaults(fn=cmd_ledger_export)
+    st = lsub.add_parser("stats", help="verdict counts and guard decision-time percentiles")
+    st.add_argument("--ledger", default="results/temporal/ledger.jsonl")
+    st.set_defaults(fn=cmd_ledger_stats)
+    ck = lsub.add_parser("check", help="action records vs activity tasks in Temporal history (needs the server)")
+    ck.add_argument("--ledger", default="results/temporal/ledger.jsonl")
+    ck.add_argument("--address", default="localhost:7233")
+    ck.add_argument("--key", default=None)
+    ck.set_defaults(fn=cmd_ledger_check)
     args = ap.parse_args(argv)
     args.fn(args)
 

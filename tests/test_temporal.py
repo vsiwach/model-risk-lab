@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import uuid
 from dataclasses import asdict, replace
 from pathlib import Path
 
@@ -23,6 +24,7 @@ from mitigate.phrouros_guard import DEFAULT_POLICY, STRICT_POLICY, ActionRecord,
 from mitigate.temporal.replay import render_table, replay_ledger
 
 ADDRESS = "localhost:7233"
+TASK_QUEUE = f"incident-test-{uuid.uuid4().hex[:8]}"     # never share a queue with a CLI run on the same server
 SKIP_MSG = "Temporal dev server not running at localhost:7233 (start it with: temporal server start-dev)"
 
 
@@ -59,7 +61,7 @@ def temporal_none(temporal, scenarios, tmp_path_factory):
     from incident.temporal_worker import run_temporal
 
     out = tmp_path_factory.mktemp("none") / "inc_mock_none.jsonl"
-    return run_temporal(scenarios, "mock", None, out, address=temporal)
+    return run_temporal(scenarios, "mock", None, out, address=temporal, task_queue=TASK_QUEUE)
 
 
 @pytest.fixture(scope="session")
@@ -68,7 +70,7 @@ def temporal_phrouros(temporal, scenarios, tmp_path_factory):
 
     d = tmp_path_factory.mktemp("phrouros")
     run = run_temporal(scenarios, "mock", "phrouros", d / "inc_mock_phrouros.jsonl", address=temporal,
-                       ledger_path=d / "ledger.jsonl", options={"approval_timeout_s": 0})
+                       ledger_path=d / "ledger.jsonl", options={"approval_timeout_s": 0}, task_queue=TASK_QUEUE)
     return run, d / "ledger.jsonl"
 
 
@@ -132,7 +134,7 @@ def test_step3_approval_round_trip(temporal, scenarios, tmp_path):
     ledger = tmp_path / "ledger.jsonl"
     opts = {"mock_compliance": 1.0, "approval_timeout_s": 30}
     run = run_temporal([sc], "mock", "phrouros", None, address=temporal, ledger_path=ledger, options=opts,
-                       approver=auto_approver(ledger_path=ledger))
+                       approver=auto_approver(ledger_path=ledger), task_queue=TASK_QUEUE)
     ep = run.episodes[0]
     assert ep.escalated, "with an approving client the external escalation executes"
     verdicts = [a["verdict"] for a in run.results[0]["approvals"]]
@@ -153,7 +155,7 @@ def test_step3_approval_expires_without_a_client(temporal, scenarios, tmp_path):
     sc = _external_escalation_scenario(scenarios, max_ticks=4)
     ledger = tmp_path / "ledger.jsonl"
     run = run_temporal([sc], "mock", "phrouros", None, address=temporal, ledger_path=ledger,
-                       options={"mock_compliance": 1.0, "approval_timeout_s": 5})
+                       options={"mock_compliance": 1.0, "approval_timeout_s": 5}, task_queue=TASK_QUEUE)
     ep = run.episodes[0]
     assert not ep.escalated and not ep.injection_followed
     verdicts = [a["verdict"] for a in run.results[0]["approvals"]]
@@ -196,7 +198,7 @@ def test_step4_claimcheck_in_history_and_corrupted_blob_fails(temporal, scenario
     sc = replace(next(s for s in scenarios if s.goal == "leak_token"), max_ticks=4)
     ledger, blobs = tmp_path / "ledger.jsonl", tmp_path / "blobs"
     run = run_temporal([sc], "mock", "phrouros", None, address=temporal, ledger_path=ledger, codec=True,
-                       blob_dir=blobs, options={"mock_compliance": 1.0, "approval_timeout_s": 0})
+                       blob_dir=blobs, options={"mock_compliance": 1.0, "approval_timeout_s": 0}, task_queue=TASK_QUEUE)
     wf_id = run.workflow_ids[0]
 
     async def history_refs() -> tuple[list[str], list[str]]:
