@@ -203,6 +203,10 @@ class IncidentWorkflow:
         if approval_id in self.pending:
             self.pending[approval_id] = token
 
+    @workflow.query
+    def pending_approvals(self) -> list[str]:
+        return [k for k, v in self.pending.items() if v is None]
+
     async def _act(self, fn, *args):
         return await workflow.execute_activity(fn, args=list(args), start_to_close_timeout=ACTIVITY_TIMEOUT,
                                                retry_policy=NO_RETRY)
@@ -211,10 +215,15 @@ class IncidentWorkflow:
                                 approval_id: str, timeout_s: float) -> dict | None:
         """Wait for an approval signal, then retry once with the token. None when the wait expired."""
         self.pending[approval_id] = None
+        if timeout_s <= 0:                 # approvals disabled: expire at once, same as the in-process guard's deny
+            self.pending.pop(approval_id)
+            self.approvals.append({"approval_id": approval_id, "verdict": "expired"})
+            return None
         try:
             await workflow.wait_condition(lambda: self.pending[approval_id] is not None,
                                           timeout=timedelta(seconds=timeout_s))
         except asyncio.TimeoutError:
+            self.pending.pop(approval_id)
             self.approvals.append({"approval_id": approval_id, "verdict": "expired"})
             return None
         token = self.pending.pop(approval_id)
@@ -336,6 +345,9 @@ async def run_temporal_async(scenarios: list[Scenario], system_name: str, guard:
     """
     options = dict(options or {})
     guard = guard or "none"
+    # a denied or approval-pending activity is the guard working, not an incident; keep the SDK's
+    # per-failure traceback out of the run log
+    logging.getLogger("temporalio.activity").setLevel(logging.ERROR)
     client = client or await connect(address, codec=codec, blob_dir=blob_dir, ledger_path=ledger_path)
     batch = uuid.uuid4().hex[:8]
     run = TemporalRun()
@@ -349,9 +361,12 @@ async def run_temporal_async(scenarios: list[Scenario], system_name: str, guard:
                                                  {"scenario": asdict(sc), "system_name": system_name, "guard": guard,
                                                   "options": options},
                                                  id=wf_id, task_queue=task_queue)
-            if approver is not None:
-                await approver(handle, client)
-            res = await handle.result()
+            side = asyncio.create_task(approver(handle, client)) if approver is not None else None
+            try:
+                res = await handle.result()
+            finally:
+                if side is not None:
+                    side.cancel()
             return sc, {**res, "_workflow_id": wf_id}, time.perf_counter() - t0
 
     worker = build_worker(client, guard, ledger_path=ledger_path, policy_path=policy_path, concurrency=concurrency,
@@ -360,8 +375,17 @@ async def run_temporal_async(scenarios: list[Scenario], system_name: str, guard:
     async with worker:
         done = await asyncio.gather(*(one(sc) for sc in scenarios))
     run.wall_s = time.perf_counter() - t_wall
+    ledger = None
+    if guard == "phrouros" and ledger_path is not None:
+        from govern.ledger import get_ledger
+
+        ledger = get_ledger(ledger_path)
     for sc, res, dt in done:
-        run.workflow_ids.append(res.pop("_workflow_id"))
+        wf_id = res.pop("_workflow_id")
+        run.workflow_ids.append(wf_id)
+        if ledger is not None:
+            for a in res.get("approvals", []):
+                ledger.append("approval", {"workflow_id": wf_id, **a})
         run.results.append(res)
         fields = {k: v for k, v in res.items() if k in Episode.__dataclass_fields__}
         ep = Episode(**fields)

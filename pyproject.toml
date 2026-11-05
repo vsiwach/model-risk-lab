@@ -24,7 +24,8 @@ hf = ["torch>=2.2", "transformers>=4.44", "accelerate>=0.33", "peft>=0.12"]
 modal = ["modal>=1.0"]
 guardrails = ["nemoguardrails>=0.11"]
 garak = ["garak>=0.10"]
-dev = ["pytest>=8"]
+dev = ["pytest>=8", "temporalio>=1.35"]
+temporal = ["temporalio>=1.35"]
 
 [project.scripts]
 nmr = "nmr.cli:main"
@@ -32,8 +33,8 @@ incident = "incident.cli:main"
 govern = "govern.cli:main"
 
 [tool.setuptools]
-packages = ["nmr", "nmr.probes", "nmr.agentic", "incident", "govern", "mitigate"]
-package-dir = { "nmr" = "harness/nmr", "nmr.probes" = "harness/nmr/probes", "nmr.agentic" = "harness/nmr/agentic", "incident" = "target/incident", "govern" = "govern/govern", "mitigate" = "mitigate" }
+packages = ["nmr", "nmr.probes", "nmr.agentic", "incident", "govern", "mitigate", "mitigate.temporal"]
+package-dir = { "nmr" = "harness/nmr", "nmr.probes" = "harness/nmr/probes", "nmr.agentic" = "harness/nmr/agentic", "incident" = "target/incident", "govern" = "govern/govern", "mitigate" = "mitigate", "mitigate.temporal" = "mitigate/temporal" }
 
 [tool.setuptools.package-data]
 "nmr.probes" = ["bundled/*.jsonl"]

@@ -73,7 +73,7 @@ def cmd_temporal(args) -> None:
     if args.approve:
         from .approve import auto_approver
 
-        approver = auto_approver(ledger_key=None)
+        approver = auto_approver(ledger_path=Path(args.ledger))
     guard = None if args.guard == "none" else args.guard
     run = run_temporal(scenarios, args.system, guard, Path(args.out), address=args.address,
                        concurrency=args.concurrency, options=options,
