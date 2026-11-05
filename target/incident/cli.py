@@ -54,6 +54,53 @@ def cmd_run(args) -> None:
           f"blocked {s.blocked.as_pct()}, MTTR x{s.mttr_ratio:.2f}, false positives {s.false_positive.as_pct()}")
 
 
+def cmd_temporal(args) -> None:
+    """Run the scenarios as Temporal workflows on a worker started in this process."""
+    from .metrics import summarize_incident
+    from .scenarios import build_scenarios
+    from .temporal_worker import run_temporal
+
+    scenarios = build_scenarios(seed=args.seed, max_injection=args.max_injection)
+    if args.limit:
+        scenarios = scenarios[: args.limit]
+    if args.scenario:
+        scenarios = [s for s in scenarios if s.id in set(args.scenario) or s.goal in set(args.scenario)]
+    options = {"mock_compliance": args.mock_compliance, "hardened": args.harden,
+               "approval_timeout_s": args.approval_timeout}
+    if args.real:
+        options["real"] = {"model": args.model, "base_url": args.base_url, "max_tokens": args.max_tokens}
+    approver = None
+    if args.approve:
+        from .approve import auto_approver
+
+        approver = auto_approver(ledger_key=None)
+    guard = None if args.guard == "none" else args.guard
+    run = run_temporal(scenarios, args.system, guard, Path(args.out), address=args.address,
+                       concurrency=args.concurrency, options=options,
+                       ledger_path=Path(args.ledger) if args.ledger else None,
+                       policy_path=Path(args.policy) if args.policy else None,
+                       codec=args.codec, blob_dir=Path(args.blob_dir) if args.blob_dir else None, approver=approver)
+    s = summarize_incident(run.episodes)
+    print(f"{args.system}/{args.guard}: attack success {s.attack_success.as_pct()}, unsafe executed "
+          f"{s.unsafe_executed.as_pct()}, blocked {s.blocked.as_pct()}, resolved {s.resolved.as_pct()}, "
+          f"MTTR x{s.mttr_ratio:.2f}, false positives {s.false_positive.as_pct()}, wall {run.wall_s:.1f}s")
+
+
+def cmd_approve(args) -> None:
+    """Test client: mint an approval token for one pending approval and signal the workflow."""
+    from .approve import approve_once
+
+    token = approve_once(args.workflow_id, args.approval_id, address=args.address)
+    print(f"signalled {args.workflow_id} approve({args.approval_id}, {token[:12]}...)")
+
+
+def cmd_replay(args) -> None:
+    from mitigate.temporal.replay import replay_ledger, render_table
+
+    diff = replay_ledger(Path(args.ledger), Path(args.policy))
+    print(render_table(diff))
+
+
 def cmd_report(args) -> None:
     from .metrics import markdown_incident, summarize_incident
     from .runner import read_episodes
@@ -94,6 +141,41 @@ def main(argv=None) -> None:
     r.add_argument("--workers", type=int, default=4)
     r.add_argument("--out", required=True)
     r.set_defaults(fn=cmd_run)
+
+    t = sub.add_parser("temporal", help="run the scenarios as Temporal workflows (needs `temporal server start-dev`)")
+    t.add_argument("--system", default="mock")
+    t.add_argument("--guard", choices=["none", "invariant", "phrouros"], default="none")
+    t.add_argument("--real", action="store_true", help="use the OpenAI-compatible backend instead of the mock")
+    t.add_argument("--model", default="nvidia/llama-3.1-nemotron-nano-8b-v1")
+    t.add_argument("--base-url", default="https://integrate.api.nvidia.com/v1")
+    t.add_argument("--max-tokens", type=int, default=200)
+    t.add_argument("--harden", action="store_true")
+    t.add_argument("--mock-compliance", type=float, default=0.5)
+    t.add_argument("--seed", type=int, default=7)
+    t.add_argument("--max-injection", type=int, default=72)
+    t.add_argument("--limit", type=int, default=0)
+    t.add_argument("--scenario", action="append", help="scenario id or goal to keep (repeatable)")
+    t.add_argument("--concurrency", type=int, default=8)
+    t.add_argument("--address", default="localhost:7233")
+    t.add_argument("--ledger", default="results/temporal/ledger.jsonl")
+    t.add_argument("--policy", default=None, help="runtime policy YAML (default mitigate/phrouros-policy.yaml)")
+    t.add_argument("--codec", action="store_true", help="wire the claim-check payload codec into client and worker")
+    t.add_argument("--blob-dir", default="results/temporal/blobs")
+    t.add_argument("--approve", action="store_true", help="run the approving test client beside the worker")
+    t.add_argument("--approval-timeout", type=float, default=600.0, help="seconds a step waits for approval")
+    t.add_argument("--out", required=True)
+    t.set_defaults(fn=cmd_temporal)
+
+    a = sub.add_parser("approve", help="mint an approval token and signal a waiting workflow")
+    a.add_argument("--workflow-id", required=True)
+    a.add_argument("--approval-id", required=True)
+    a.add_argument("--address", default="localhost:7233")
+    a.set_defaults(fn=cmd_approve)
+
+    p = sub.add_parser("replay", help="re-run every ledger action record under a candidate policy")
+    p.add_argument("--ledger", default="results/temporal/ledger.jsonl")
+    p.add_argument("--policy", required=True)
+    p.set_defaults(fn=cmd_replay)
 
     c = sub.add_parser("report")
     c.add_argument("results", nargs="+")
