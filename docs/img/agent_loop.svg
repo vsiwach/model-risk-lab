@@ -1,0 +1,78 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 640" width="1200" height="640" font-family="Inter, system-ui, -apple-system, Segoe UI, Roboto, sans-serif">
+  <defs>
+    <marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="#8a8f98"/></marker>
+    <marker id="ag" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="#2f7d5b"/></marker>
+  </defs>
+  <rect width="1200" height="640" fill="#ffffff"/>
+
+  <!-- row 1 -->
+  <g>
+    <rect x="40" y="60" width="330" height="120" rx="14" fill="#b4432a"/>
+    <text x="205" y="110" text-anchor="middle" font-size="26" font-weight="700" fill="#fff">SLO breach detected</text>
+    <text x="205" y="146" text-anchor="middle" font-size="18" fill="#fde8e2">half or more of live samples breaching</text>
+  </g>
+  <path d="M374 120 H420" stroke="#8a8f98" stroke-width="3" marker-end="url(#a)"/>
+  <g>
+    <rect x="426" y="60" width="330" height="120" rx="14" fill="#4f4ebd"/>
+    <text x="591" y="110" text-anchor="middle" font-size="26" font-weight="700" fill="#fff">Incident opened</text>
+    <text x="591" y="146" text-anchor="middle" font-size="18" fill="#e3e3fb">time-to-resolve clock starts</text>
+  </g>
+  <path d="M760 120 H806" stroke="#8a8f98" stroke-width="3" marker-end="url(#a)"/>
+  <g>
+    <rect x="812" y="60" width="330" height="120" rx="14" fill="#4f4ebd"/>
+    <text x="977" y="110" text-anchor="middle" font-size="26" font-weight="700" fill="#fff">Quarantine, traffic spills</text>
+    <text x="977" y="146" text-anchor="middle" font-size="18" fill="#e3e3fb">never the last healthy pool</text>
+  </g>
+
+  <path d="M977 184 V256" stroke="#8a8f98" stroke-width="3" marker-end="url(#a)"/>
+
+  <!-- row 2 -->
+  <g>
+    <rect x="812" y="262" width="330" height="120" rx="14" fill="#4f4ebd"/>
+    <text x="977" y="312" text-anchor="middle" font-size="26" font-weight="700" fill="#fff">Verify by probing</text>
+    <text x="977" y="348" text-anchor="middle" font-size="18" fill="#e3e3fb">first-token latency within the tier's SLO</text>
+  </g>
+  <path d="M806 322 H760" stroke="#8a8f98" stroke-width="3" marker-end="url(#a)"/>
+  <g>
+    <rect x="426" y="262" width="330" height="120" rx="14" fill="#4f4ebd"/>
+    <text x="591" y="312" text-anchor="middle" font-size="26" font-weight="700" fill="#fff">Reinstate</text>
+    <text x="591" y="348" text-anchor="middle" font-size="18" fill="#e3e3fb">after two clean probes in a row</text>
+  </g>
+  <path d="M420 322 H374" stroke="#8a8f98" stroke-width="3" marker-end="url(#a)"/>
+  <g>
+    <rect x="40" y="262" width="330" height="120" rx="14" fill="#2f7d5b"/>
+    <text x="205" y="312" text-anchor="middle" font-size="26" font-weight="700" fill="#fff">Resolve</text>
+    <text x="205" y="348" text-anchor="middle" font-size="18" fill="#dff3ea">time to resolve recorded</text>
+  </g>
+
+  <!-- escalate branch -->
+  <path d="M977 386 V458" stroke="#8a8f98" stroke-width="3" marker-end="url(#a)"/>
+  <text x="995" y="428" font-size="15" fill="#6b7079">if probes keep failing</text>
+  <g>
+    <rect x="812" y="464" width="330" height="120" rx="14" fill="#8a5a1e"/>
+    <text x="977" y="514" text-anchor="middle" font-size="26" font-weight="700" fill="#fff">Page on-call</text>
+    <text x="977" y="550" text-anchor="middle" font-size="18" fill="#f7e9d6">once, after five failed probes</text>
+  </g>
+
+  <!-- episode recorded -->
+  <path d="M205 386 V458" stroke="#2f7d5b" stroke-width="3" stroke-dasharray="8 7" marker-end="url(#ag)"/>
+  <g>
+    <rect x="40" y="464" width="330" height="120" rx="14" fill="#ffffff" stroke="#2f7d5b" stroke-width="3" stroke-dasharray="10 8"/>
+    <text x="205" y="514" text-anchor="middle" font-size="26" font-weight="700" fill="#2f7d5b">Episode recorded</text>
+    <text x="205" y="550" text-anchor="middle" font-size="18" fill="#4d6b5c">state, actions, outcome: training data</text>
+  </g>
+
+  <!-- allowed moves card in the free cell -->
+  <g>
+    <rect x="426" y="464" width="330" height="120" rx="14" fill="#f4f5f7" stroke="#d9dce2" stroke-width="2"/>
+    <text x="591" y="496" text-anchor="middle" font-size="15" font-weight="700" fill="#3a3f48" letter-spacing="1">THE ONLY SIX MOVES</text>
+    <g font-size="15" font-weight="600" fill="#3a3f48">
+      <rect x="446" y="512" width="92" height="26" rx="13" fill="#ffffff" stroke="#c9cdd5"/><text x="492" y="530" text-anchor="middle">quarantine</text>
+      <rect x="545" y="512" width="92" height="26" rx="13" fill="#ffffff" stroke="#c9cdd5"/><text x="591" y="530" text-anchor="middle">probe</text>
+      <rect x="644" y="512" width="92" height="26" rx="13" fill="#ffffff" stroke="#c9cdd5"/><text x="690" y="530" text-anchor="middle">reinstate</text>
+      <rect x="446" y="546" width="92" height="26" rx="13" fill="#ffffff" stroke="#c9cdd5"/><text x="492" y="564" text-anchor="middle">resolve</text>
+      <rect x="545" y="546" width="92" height="26" rx="13" fill="#ffffff" stroke="#c9cdd5"/><text x="591" y="564" text-anchor="middle">escalate</text>
+      <rect x="644" y="546" width="92" height="26" rx="13" fill="#ffffff" stroke="#c9cdd5"/><text x="690" y="564" text-anchor="middle">wait</text>
+    </g>
+  </g>
+</svg>
