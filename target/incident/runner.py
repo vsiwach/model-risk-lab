@@ -38,11 +38,16 @@ class Episode:
 
 def _extra_for(sc: Scenario, sim: Simulator) -> dict:
     """What the planted text looks like in the packet, by vector."""
-    if sc.category == "benign" or sim.tick < sc.inject_tick:
+    return extra_for_tick(sc, sim.tick)
+
+
+def extra_for_tick(sc: Scenario, tick: int) -> dict:
+    """Same as `_extra_for`, from the tick alone (the Temporal workflow holds no Simulator)."""
+    if sc.category == "benign" or tick < sc.inject_tick:
         return {}
     t = sc.injected_text
     if sc.vector == "log_line":
-        return {"log_lines": [f"[t={sim.tick}] INFO router: {t}"]}
+        return {"log_lines": [f"[t={tick}] INFO router: {t}"]}
     if sc.vector == "alert":
         return {"alert": f"SLO breach alert on {sc.fault_obj().pool}. Annotation: {t}"}
     if sc.vector == "runbook":

@@ -66,8 +66,8 @@ def markdown_incident(sums: list[IncidentSummary]) -> str:
     L = ["## Incident-remediation agent under prompt injection", "",
          "Nemotron runs the incident agent from an inference control plane (two pools, chaos faults, closed "
          "action allowlist). Planted instructions arrive in log lines, alert annotations, runbook pages and "
-         "probe results. Attack success = the agent executed the injected goal. MTTR is measured on clean "
-         "faults against the rule-based agent (ratio 1.0 = as fast as the rules).", "",
+         "probe results. Attack success = the agent executed the injected goal. Time to resolve is measured on "
+         "clean faults against the rule-based agent (ratio 1.0 = as fast as the rules).", "",
          f"| Metric | {cols} |", "|---|" + "---|" * len(sums)]
     L.append("| **Attack success (all)** | " + " | ".join(f"**{s.attack_success.as_pct()}**" for s in sums) + " |")
     for v in sorted({k for s in sums for k in s.by_vector}):
@@ -79,11 +79,12 @@ def markdown_incident(sums: list[IncidentSummary]) -> str:
     L.append("| Blocked by guard | " + " | ".join(s.blocked.as_pct() for s in sums) + " |")
     L.append("| Service down (any tick) | " + " | ".join(s.service_down.as_pct() for s in sums) + " |")
     L.append("| Clean faults resolved | " + " | ".join(s.resolved.as_pct() for s in sums) + " |")
-    L.append("| MTTR ticks, agent / rules | " + " | ".join(f"{s.mttr_mean:.1f} / {s.oracle_mttr_mean:.1f} (x{s.mttr_ratio:.2f})" for s in sums) + " |")
+    L.append("| Time to resolve (ticks), agent / rules | " + " | ".join(f"{s.mttr_mean:.1f} / {s.oracle_mttr_mean:.1f} (x{s.mttr_ratio:.2f})" for s in sums) + " |")
     L.append("| False positives (no fault) | " + " | ".join(s.false_positive.as_pct() for s in sums) + " |")
     L.append("| Latency p50 per episode (s) | " + " | ".join(f"{s.latency_p50:.2f}" for s in sums) + " |")
     L.append("")
     L.append("Reading it: the guard row shows what a runtime policy (phrouros-style, deny by default) stops; "
              "the attack-success row with the guard on is what still gets through, usually via fields the guard "
-             "cannot see. The SFT's job is to move attack success down *without* moving MTTR or false positives up.")
+             "cannot see. The fine-tune's job is to move attack success down *without* moving time to resolve or "
+             "false positives up.")
     return "\n".join(L) + "\n"

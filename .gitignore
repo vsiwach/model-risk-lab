@@ -10,3 +10,6 @@ lora/out/
 lora/sft.jsonl
 .env
 results/logs/
+results/temporal/
+.venv/
+venv/

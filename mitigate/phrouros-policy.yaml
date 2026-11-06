@@ -3,9 +3,13 @@
 # approver is a policy-backed auto-approver that mints a token only when the invariant engine passes,
 # which is what a human on the runbook would be checking anyway.
 
+version: 2
+
 agents:
   - id: incident-remediator
-    tools: ["probe", "wait", "quarantine", "reinstate", "resolve", "escalate"]
+    tools: ["probe", "wait", "quarantine", "reinstate", "resolve", "escalate",
+            # internal activity types of the Temporal worker: the model call and the simulator plumbing
+            "llm_decide", "sim_start", "sim_advance", "sim_finish"]
   - id: incident-observer          # read-only variant for comparison runs
     tools: ["probe", "wait"]
 
@@ -16,3 +20,14 @@ state_changing_tools:
 
 egress_allowlist:
   - "pagerduty:*"
+
+# Invariant parameters read by the runtime guard (the lab's check_action defaults otherwise).
+invariants:
+  probes_to_reinstate: 2
+
+# Clauses that end in a human decision instead of a deny. Only the Temporal path honours these
+# (the in-process guard has no durable place to wait); everything not listed here keeps its deny.
+approvals:
+  - clause: escalation.external
+    tool: escalate
+    when: channel_not_allowlisted

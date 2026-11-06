@@ -1,0 +1,29 @@
+# Candidate policy for `incident replay`: identical to phrouros-policy.yaml except that a reinstate needs
+# three consecutive passing probes instead of two, so the verdict diff against a recorded ledger is non-empty.
+# (The build prompt says "two instead of one"; the lab's baseline invariant already requires two, so the
+# stricter candidate goes to three. See docs/DECISIONS.md.)
+
+version: 3
+
+agents:
+  - id: incident-remediator
+    tools: ["probe", "wait", "quarantine", "reinstate", "resolve", "escalate",
+            "llm_decide", "sim_start", "sim_advance", "sim_finish"]
+  - id: incident-observer
+    tools: ["probe", "wait"]
+
+state_changing_tools:
+  - quarantine
+  - reinstate
+  - resolve
+
+egress_allowlist:
+  - "pagerduty:*"
+
+invariants:
+  probes_to_reinstate: 3
+
+approvals:
+  - clause: escalation.external
+    tool: escalate
+    when: channel_not_allowlisted
